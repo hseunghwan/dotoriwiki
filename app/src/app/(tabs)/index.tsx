@@ -1,0 +1,239 @@
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputInstance } from 'react-native';
+import type { GeoFix } from '../../lib/capture';
+import { gateway } from '../../lib/gateway';
+import { locate } from '../../lib/location';
+import { clock12, mergeRecent, recentTime, STAGE, type RecentMemo } from '../../lib/memos';
+import type { MemoListItemWire } from '../../lib/wire';
+import { capture, getApp, useApp } from '../../state';
+import { useFocusPoll, useNow, useOutbox } from '../../ui/hooks';
+import { Icon } from '../../ui/icon';
+import { Header, Pill, PrimaryButton, s as ui, Screen, SectionTitle } from '../../ui/parts';
+import { DomainChips } from '../../ui/domain-chips';
+import { useTheme } from '../../ui/theme';
+
+const SETTLED = new Set(['ingested', 'failed', 'dead', 'held']);
+
+type Fix = { kind: 'off' } | { kind: 'finding' } | { kind: 'found'; fix: GeoFix } | { kind: 'none' };
+
+/** Location for the memo being written, fetched while typing so sending never waits for it. */
+function useCompositionFix(): [Fix, () => void] {
+  const enabled = useApp((a) => a.settings.location);
+  const [fix, setFix] = useState<Fix>({ kind: enabled ? 'finding' : 'off' });
+  const refresh = useCallback(() => {
+    if (!getApp().settings.location) return setFix({ kind: 'off' });
+    setFix((f) => (f.kind === 'found' ? f : { kind: 'finding' }));
+    void locate().then((g) => setFix(g ? { kind: 'found', fix: g } : { kind: 'none' }));
+  }, []);
+  useEffect(refresh, [enabled, refresh]);
+  return [fix, refresh];
+}
+
+function ConnectionBadge({ waiting }: { waiting: number }) {
+  const t = useTheme();
+  const reachable = useApp((a) => a.reachable);
+  const authLost = useApp((a) => a.authLost);
+  if (authLost) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push({ pathname: '/onboarding', params: { repair: '401' } })}
+        style={[st.badge, { backgroundColor: t.bg3 }]}
+      >
+        <Icon name="alert" size={14} color={t.warn} />
+        <Text style={{ color: t.warn, fontSize: 12 }}>다시 연결 필요 · {waiting}개 대기</Text>
+      </Pressable>
+    );
+  }
+  if (reachable === null) return null;
+  return reachable ? (
+    <View style={[st.badge, { backgroundColor: t.bg2 }]}>
+      <View style={[st.dot, { backgroundColor: t.okFg }]} />
+      <Text style={{ color: t.muted, fontSize: 12 }}>맥미니 연결됨</Text>
+    </View>
+  ) : (
+    <View style={[st.badge, { backgroundColor: t.bg3 }]}>
+      <Icon name="wifiOff" size={14} color={t.warn} />
+      <Text style={{ color: t.warn, fontSize: 12 }}>오프라인 · {waiting}개 대기</Text>
+    </View>
+  );
+}
+
+function RecentRow({ memo, now }: { memo: RecentMemo; now: Date }) {
+  const t = useTheme();
+  const stage = STAGE[memo.stage];
+  const unsent = memo.stage === 'queued' || memo.stage === 'dead';
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => (unsent ? router.push('/settings') : router.push({ pathname: '/memo/[id]', params: { id: memo.id } }))}
+      style={[st.item, { borderBottomColor: t.line }]}
+    >
+      <Text numberOfLines={2} style={{ color: t.fg, fontSize: 14, lineHeight: 21 }}>
+        {memo.text}
+      </Text>
+      <View style={st.meta}>
+        <Text style={{ color: t.faint, fontSize: 12 }}>{recentTime(new Date(memo.captured_at), now)}</Text>
+        <Pill label={stage.label} tone={stage.tone} />
+        {memo.stage === 'ingested' && memo.first_page ? (
+          <View style={st.page}>
+            <Icon name="file" size={12} color={t.link} />
+            <Text numberOfLines={1} style={{ color: t.link, fontSize: 12, flexShrink: 1 }}>{memo.first_page}</Text>
+          </View>
+        ) : memo.domain ? (
+          <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12, flexShrink: 1 }}>{memo.domain}</Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+export default function MemoTab() {
+  const t = useTheme();
+  const input = useRef<TextInputInstance>(null);
+  const [text, setText] = useState('');
+  const [hint, setHint] = useState<string | null>(null);
+  const [attach, setAttach] = useState(true);
+  const [fix, refreshFix] = useCompositionFix();
+  const [server, setServer] = useState<MemoListItemWire[]>([]);
+  const rows = useOutbox();
+  const now = useNow();
+  const pairing = useApp((a) => a.pairing);
+
+  const recent = useMemo(() => mergeRecent(rows, server.filter((m) => m.source !== 'feed')).slice(0, 10), [rows, server]);
+  const moving = recent.some((m) => !SETTLED.has(m.stage));
+  const waiting = rows.filter((r) => r.state === 'queued').length;
+
+  const load = useCallback(async () => {
+    if (!pairing) return;
+    const r = await gateway.memos(pairing, null, 30);
+    if (r.ok) setServer(r.data.memos);
+  }, [pairing]);
+  useFocusPoll(load, 4_000, moving);
+  // A flushed row leaves the outbox before the next poll would list it from the gateway.
+  useEffect(() => {
+    void load();
+  }, [waiting, load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const focus = setTimeout(() => input.current?.focus(), 250);
+      refreshFix();
+      return () => clearTimeout(focus);
+    }, [refreshFix]),
+  );
+
+  async function send() {
+    const body = text.trim();
+    if (!body) return;
+    setText('');
+    const { sent } = await capture({
+      text: body,
+      source: 'typed',
+      domainHint: hint,
+      location: attach && fix.kind === 'found' ? fix.fix : null,
+    });
+    setAttach(true);
+    await sent;
+    void load();
+  }
+
+  return (
+    <Screen>
+      <Header
+        title="메모"
+        mark
+        right={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <ConnectionBadge waiting={waiting} />
+            <Pressable accessibilityRole="button" accessibilityLabel="설정" onPress={() => router.push('/settings')} style={ui.iconButton}>
+              <Icon name="settings" color={t.muted} />
+            </Pressable>
+          </View>
+        }
+      />
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={st.main} keyboardShouldPersistTaps="handled">
+          <View style={[st.compose, { backgroundColor: t.bg2, borderColor: t.onLine }]}>
+            <TextInput
+              ref={input}
+              accessibilityLabel="메모 내용"
+              multiline
+              value={text}
+              onChangeText={setText}
+              placeholder="떠오르는 대로 적어요. 어디에 쌓을지는 알아서 정해요."
+              placeholderTextColor={t.faint}
+              style={[st.textarea, { color: t.fg }]}
+              textAlignVertical="top"
+            />
+            <View style={st.composeMeta}>
+              <View style={st.inline4}>
+                <Icon name="clock" size={14} color={t.faint} />
+                <Text style={{ color: t.faint, fontSize: 12 }}>{clock12(now)}</Text>
+              </View>
+              {fix.kind === 'none' && attach && (
+                <Pressable accessibilityRole="button" onPress={refreshFix} style={[st.loc, { borderColor: t.line2, borderStyle: 'dashed' }]}>
+                  <Icon name="pin" size={14} color={t.faint} />
+                  <Text style={{ color: t.faint, fontSize: 12 }}>위치 다시 찾기</Text>
+                </Pressable>
+              )}
+              {fix.kind !== 'off' &&
+                !(fix.kind === 'none' && attach) &&
+                (attach ? (
+                  <Pressable accessibilityRole="button" accessibilityLabel="위치 빼기" onPress={() => setAttach(false)} style={[st.loc, { borderColor: t.line2 }]}>
+                    <Icon name="pin" size={14} color={t.muted} />
+                    <Text style={{ color: t.muted, fontSize: 12 }}>
+                      {fix.kind === 'found' ? (fix.fix.place ?? '현재 위치') : '위치 찾는 중'}
+                    </Text>
+                    <Icon name="x" size={12} color={t.muted} strokeWidth={2} />
+                  </Pressable>
+                ) : (
+                  <Pressable accessibilityRole="button" onPress={() => setAttach(true)} style={[st.loc, { borderColor: t.line2, borderStyle: 'dashed' }]}>
+                    <Icon name="pin" size={14} color={t.faint} />
+                    <Text style={{ color: t.faint, fontSize: 12 }}>위치 붙이기</Text>
+                  </Pressable>
+                ))}
+            </View>
+          </View>
+
+          <View style={{ gap: 8 }}>
+            <SectionTitle>어디에 쌓을까요</SectionTitle>
+            <DomainChips value={hint} onChange={setHint} />
+          </View>
+
+          <PrimaryButton label="보내기" icon="send" disabled={text.trim() === ''} onPress={send} />
+
+          <View style={{ gap: 4 }}>
+            <SectionTitle style={{ marginBottom: 4 }}>방금 보낸 메모</SectionTitle>
+            {recent.length === 0 ? (
+              <View style={st.empty}>
+                <Text style={{ color: t.muted, fontSize: 14 }}>아직 보낸 메모가 없어요</Text>
+                <Text style={{ color: t.faint, fontSize: 13, lineHeight: 21, textAlign: 'center' }}>
+                  오늘 배운 것, 친구가 좋아한 것, 나중에 볼 영상.{'\n'}아무거나 한 줄이면 돼요.
+                </Text>
+              </View>
+            ) : (
+              recent.map((m) => <RecentRow key={m.id} memo={m} now={now} />)
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Screen>
+  );
+}
+
+const st = StyleSheet.create({
+  main: { padding: 16, gap: 20 },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 28, paddingHorizontal: 10, borderRadius: 14 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  compose: { padding: 16, borderRadius: 12, borderWidth: 1, gap: 12 },
+  textarea: { minHeight: 154, fontSize: 16, lineHeight: 25.6, padding: 0 },
+  composeMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  inline4: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  loc: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 28, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1 },
+  item: { paddingVertical: 12, gap: 8, borderBottomWidth: 1 },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  page: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 },
+  empty: { paddingVertical: 24, gap: 6, alignItems: 'center' },
+});

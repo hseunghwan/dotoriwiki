@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>We replaced 40 cron jobs with one SQLite queue | Example Engineering</title>
+<meta name="description" content="Forty scheduled jobs, twelve servers, and one table that now holds all of them.">
+<meta property="og:title" content="We replaced 40 cron jobs with one SQLite queue">
+<meta property="og:site_name" content="Example Engineering">
+<meta property="og:url" content="https://example.com/blog/2026/10/one-sqlite-queue/">
+<link rel="canonical" href="https://example.com/blog/2026/10/one-sqlite-queue/">
+<link rel="stylesheet" href="/assets/site.css">
+<script>window.dataLayer = window.dataLayer || []; function track(){ dataLayer.push(arguments); } track('page', 'blog');</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"We replaced 40 cron jobs with one SQLite queue","author":{"@type":"Person","name":"Mira Okafor"},"datePublished":"2026-10-27T09:00:00Z","publisher":{"@type":"Organization","name":"Example Engineering"}}</script>
+</head>
+<body class="post">
+<div class="cookie-banner" role="dialog">
+  <p>We use cookies to count visits. <a href="/privacy">Read the policy</a> or <button type="button">Accept</button></p>
+</div>
+<header class="site-header">
+  <a class="logo" href="/">Example Engineering</a>
+  <nav class="site-nav" aria-label="Main">
+    <ul>
+      <li><a href="/blog/">Blog</a></li>
+      <li><a href="/careers/">Careers</a></li>
+      <li><a href="/open-source/">Open source</a></li>
+      <li><a href="/about/">About</a></li>
+    </ul>
+  </nav>
+</header>
+<main class="layout">
+  <article class="post-body">
+    <header class="post-header">
+      <p class="kicker"><a href="/blog/tags/infrastructure/">Infrastructure</a></p>
+      <h1>We replaced 40 cron jobs with one SQLite queue</h1>
+      <p class="byline">By <a href="/authors/mira-okafor/" rel="author">Mira Okafor</a> · <time datetime="2026-10-27">October 27, 2026</time> · 7 min read</p>
+    </header>
+    <div class="post-content">
+      <p>Two years ago our scheduled work lived in forty crontab entries spread across twelve servers. Nobody could say from one place which jobs had run last night, and the only alert for a missed job was a customer asking why their monthly report never arrived.</p>
+      <p>This spring we moved every one of those jobs into a single table in SQLite. Workers on each server now ask the table for the next due job instead of waiting for cron to start them. The change took three weeks, and since then we have not lost a single run.</p>
+      <h2>One table, four columns that matter</h2>
+      <p>The queue lives in a single table, and every worker claims a row with one UPDATE ... RETURNING statement. The columns that matter are the job name, the time it is due, its state, and how many times it has been tried. Everything else, such as arguments or the last error message, is there for people reading the table, not for the scheduler.</p>
+      <pre><code>UPDATE jobs SET state = 'running', attempts = attempts + 1
+WHERE id = (SELECT id FROM jobs WHERE state = 'due' AND run_at &lt;= unixepoch() ORDER BY run_at LIMIT 1)
+RETURNING id, name, args;</code></pre>
+      <p>Because the select and the update happen in one statement, two workers can never claim the same row. SQLite serialises writers, so the second worker simply sees the next due job. We did not need a lock server, a leader election, or a heartbeat table.</p>
+      <h2>Failing well</h2>
+      <p>When a job throws, the worker writes the error into the row and pushes its due time back. The delay doubles with each attempt, starting at thirty seconds. After the fifth failure the row moves to a held state, and a small page in our admin tool lists every held job with its last error and a button to try again.</p>
+      <p>Held jobs turned out to be the most useful part of the project. Before, a failing job failed silently every night until someone noticed. Now it fails five times and then waits in plain sight, which is a much better place for a problem to wait.</p>
+      <h2>Where this stops working</h2>
+      <p>This design is not a replacement for a real message broker. SQLite allows one writer at a time, so a service that enqueues thousands of jobs per second would spend most of its time waiting on the write lock. Our busiest day runs about four thousand jobs, which leaves plenty of room.</p>
+      <p>The file also has to live on a disk every worker can reach safely. We keep it on the one server that already ran our admin tool, and workers on other servers talk to it through a thin HTTP endpoint rather than opening the database over a network share.</p>
+      <h2>What we would tell our past selves</h2>
+      <p>Put the schedule where you can query it. Most of the value came not from the queue itself but from being able to answer, with one SELECT, which jobs ran, which are late, and which are stuck.</p>
+    </div>
+    <footer class="post-footer">
+      <p>Tags: <a href="/blog/tags/sqlite/">sqlite</a>, <a href="/blog/tags/scheduling/">scheduling</a></p>
+      <div class="share"><a href="/share?u=one-sqlite-queue">Share this post</a></div>
+    </footer>
+  </article>
+  <aside class="sidebar" aria-label="Related">
+    <h2>Related posts</h2>
+    <ul>
+      <li><a href="/blog/2026/08/backups-we-actually-test/">Backups we actually test</a></li>
+      <li><a href="/blog/2026/06/one-log-format/">Moving every service to one log format</a></li>
+      <li><a href="/blog/2026/03/oncall-handbook/">Our on-call handbook, version three</a></li>
+    </ul>
+    <div class="newsletter">
+      <h2>Get new posts by email</h2>
+      <form action="/subscribe" method="post"><input type="email" name="email" placeholder="you@example.com"><button>Subscribe</button></form>
+    </div>
+  </aside>
+</main>
+<footer class="site-footer">
+  <p>© 2026 Example Engineering. All rights reserved.</p>
+  <ul><li><a href="/privacy">Privacy</a></li><li><a href="/terms">Terms</a></li><li><a href="/rss.xml">RSS</a></li></ul>
+</footer>
+<script src="/assets/site.js" defer></script>
+</body>
+</html>

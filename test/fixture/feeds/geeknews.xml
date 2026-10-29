@@ -1,0 +1,269 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns='http://www.w3.org/2005/Atom'>
+<title>GeekNews</title>
+<link rel='alternate' type='text/html' href='https://news.hada.io' />
+<link rel='self' type='application/atom+xml' href='https://news.hada.io/rss/news' />
+<id>https://news.hada.io/rss/news</id>
+<updated>2026-10-29T01:46:09+09:00</updated>
+<entry>
+  <title><![CDATA[터미널에서 쓰는 가벼운 마크다운 노트 앱 Pinecone 1.0 공개]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36175' />
+  <id>https://news.hada.io/topic?id=36175</id>
+  <updated>2026-10-29T01:46:09+09:00</updated>
+  <published>2026-10-29T01:46:09+09:00</published>
+  <author>
+    <name>acorn</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>파일 하나에 노트 하나를 저장하는 <strong>평문 기반 노트 앱</strong></li>
+<li>전체 검색과 태그를 지원하고, 동기화는 사용자가 고른 폴더에 맡김</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[Show GN: 회의록을 자동으로 할 일 목록으로 바꿔주는 도구]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36174' />
+  <id>https://news.hada.io/topic?id=36174</id>
+  <updated>2026-10-29T01:43:09+09:00</updated>
+  <published>2026-10-29T01:43:09+09:00</published>
+  <author>
+    <name>hazel</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>회의록 텍스트에서 <strong>담당자와 기한</strong>을 찾아 할 일 목록을 만들어 줌</li>
+<li>직접 만든 사이드 프로젝트이며 피드백을 받고 싶음</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[오래된 서버실 하나를 정리하며 배운 일곱 가지]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36173' />
+  <id>https://news.hada.io/topic?id=36173</id>
+  <updated>2026-10-29T01:40:09+09:00</updated>
+  <published>2026-10-29T01:40:09+09:00</published>
+  <author>
+    <name>pinecone</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>케이블에 이름표를 붙이는 일이 <strong>가장 값싼 문서화</strong>였음</li>
+<li>전원 계통도를 그려 보니 이중화된 줄 알았던 장비 셋이 같은 멀티탭에 꽂혀 있었음</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[Ask GN: 개인 프로젝트의 백업은 어떻게 하시나요?]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36172' />
+  <id>https://news.hada.io/topic?id=36172</id>
+  <updated>2026-10-29T00:33:26+09:00</updated>
+  <published>2026-10-29T00:33:26+09:00</published>
+  <author>
+    <name>chestnut</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>개인 서버 한 대에서 돌리는 프로젝트들의 <strong>백업 방법</strong>이 궁금함</li>
+<li>복구 연습까지 하시는 분이 있는지도 알고 싶음</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[브라우저만으로 동작하는 오프라인 지도 뷰어]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36171' />
+  <id>https://news.hada.io/topic?id=36171</id>
+  <updated>2026-10-29T00:31:30+09:00</updated>
+  <published>2026-10-29T00:31:30+09:00</published>
+  <author>
+    <name>acorn</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>지도 타일을 <strong>한 파일로 묶어</strong> 내려받은 뒤 네트워크 없이 볼 수 있음</li>
+<li>등산이나 여행처럼 통신이 불안한 곳을 위한 용도</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[타입 시스템으로 단위 실수를 막는 방법]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36170' />
+  <id>https://news.hada.io/topic?id=36170</id>
+  <updated>2026-10-28T23:36:33+09:00</updated>
+  <published>2026-10-28T23:36:33+09:00</published>
+  <author>
+    <name>hazel</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>미터와 피트처럼 <strong>단위가 다른 숫자</strong>를 서로 다른 타입으로 표현하는 기법 소개</li>
+<li>컴파일 시점에 단위 혼동을 잡아 런타임 검사 없이 안전성을 얻음</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[40개의 cron 작업을 SQLite 큐 하나로 대체한 이야기]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36168' />
+  <id>https://news.hada.io/topic?id=36168</id>
+  <updated>2026-10-28T22:40:50+09:00</updated>
+  <published>2026-10-28T22:40:50+09:00</published>
+  <author>
+    <name>pinecone</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>예약 작업 40여 개를 각 서버의 cron에서 꺼내 <strong>SQLite 테이블 하나로 된 작업 큐</strong>로 옮긴 경험 공유</li>
+<li>워커는 <code>UPDATE ... RETURNING</code> 한 문장으로 다음 작업을 가져가므로 <strong>별도의 잠금 서버가 필요 없음</strong></li>
+<li>실패한 작업은 지수 백오프로 재시도되고, 다섯 번 실패하면 <strong>보류 상태</strong>로 옮겨져 관리 화면에서 확인 가능</li>
+<li>전환 후 놓친 작업이 한 건도 없었고, 문제가 생겼을 때 볼 곳이 서버 12대에서 <strong>테이블 하나</strong>로 줄었음</li>
+<li>초당 수천 건을 넣는 서비스라면 쓰기 잠금 때문에 전용 메시지 브로커가 더 적합함</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[사내 위키 검색이 느려진 이유를 추적한 기록]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36167' />
+  <id>https://news.hada.io/topic?id=36167</id>
+  <updated>2026-10-28T22:37:50+09:00</updated>
+  <published>2026-10-28T22:37:50+09:00</published>
+  <author>
+    <name>chestnut</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>검색이 느려진 원인은 <strong>첨부 파일 본문까지 색인</strong>하도록 바뀐 설정이었음</li>
+<li>색인 대상을 줄이자 응답 시간이 원래대로 돌아옴</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[작은 팀을 위한 코드 리뷰 체크리스트]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36166' />
+  <id>https://news.hada.io/topic?id=36166</id>
+  <updated>2026-10-28T21:33:32+09:00</updated>
+  <published>2026-10-28T21:33:32+09:00</published>
+  <author>
+    <name>acorn</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>리뷰어가 매번 확인할 <strong>열 가지 질문</strong>을 정리</li>
+<li>스타일 지적은 포매터에 맡기고 사람은 설계와 테스트에 집중하자는 제안</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[Show GN: 손글씨 메모를 사진으로 찍으면 정리해 주는 앱]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36165' />
+  <id>https://news.hada.io/topic?id=36165</id>
+  <updated>2026-10-28T20:35:53+09:00</updated>
+  <published>2026-10-28T20:35:53+09:00</published>
+  <author>
+    <name>hazel</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>사진 속 손글씨를 읽어 <strong>날짜별로 정리</strong>해 줌</li>
+<li>모든 처리는 기기 안에서 이루어짐</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[HTTP 캐시 헤더, 다시 정리하기]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36164' />
+  <id>https://news.hada.io/topic?id=36164</id>
+  <updated>2026-10-28T19:35:08+09:00</updated>
+  <published>2026-10-28T19:35:08+09:00</published>
+  <author>
+    <name>pinecone</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li><strong>Cache-Control</strong>의 주요 지시어를 예제와 함께 설명</li>
+<li>정적 파일과 API 응답에 각각 어떤 값을 쓰면 좋은지 정리</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[첫 오픈소스 메인테이너가 된 지 1년]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36163' />
+  <id>https://news.hada.io/topic?id=36163</id>
+  <updated>2026-10-28T18:58:11+09:00</updated>
+  <published>2026-10-28T18:58:11+09:00</published>
+  <author>
+    <name>chestnut</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>이슈에 답하는 시간을 <strong>주 2회로 정해 두니</strong> 지치지 않고 이어갈 수 있었음</li>
+<li>기여 안내 문서를 다듬자 첫 기여자가 눈에 띄게 늘었음</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[로그를 줄였더니 장애 대응이 빨라졌다]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36162' />
+  <id>https://news.hada.io/topic?id=36162</id>
+  <updated>2026-10-28T16:34:14+09:00</updated>
+  <published>2026-10-28T16:34:14+09:00</published>
+  <author>
+    <name>acorn</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>하루 수억 줄이던 로그를 <strong>의미 있는 이벤트 위주로</strong> 줄인 과정</li>
+<li>검색 비용이 줄고 중요한 로그가 묻히지 않게 되었음</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[Ask GN: 사이드 프로젝트 도메인은 어디서 사시나요?]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36161' />
+  <id>https://news.hada.io/topic?id=36161</id>
+  <updated>2026-10-28T15:43:36+09:00</updated>
+  <published>2026-10-28T15:43:36+09:00</published>
+  <author>
+    <name>hazel</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>도메인 등록 업체를 고를 때 <strong>무엇을 기준으로</strong> 보시는지 궁금함</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[키보드 단축키만으로 쓰는 텍스트 편집기 만들기]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36160' />
+  <id>https://news.hada.io/topic?id=36160</id>
+  <updated>2026-10-28T15:04:28+09:00</updated>
+  <published>2026-10-28T15:04:28+09:00</published>
+  <author>
+    <name>pinecone</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li><strong>모드 없는 편집기</strong>를 300줄 남짓으로 구현한 과정</li>
+<li>버퍼 구조로 갭 버퍼를 고른 이유를 설명</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[정적 사이트 생성기를 직접 만든 이유]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36159' />
+  <id>https://news.hada.io/topic?id=36159</id>
+  <updated>2026-10-28T14:38:00+09:00</updated>
+  <published>2026-10-28T14:38:00+09:00</published>
+  <author>
+    <name>chestnut</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>기존 도구의 플러그인 업데이트에 지쳐 <strong>필요한 기능만</strong> 직접 구현</li>
+<li>마크다운 변환과 템플릿, 피드 생성까지 400줄로 충분했음</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[데이터베이스 마이그레이션을 되돌릴 수 있게 쓰는 법]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36158' />
+  <id>https://news.hada.io/topic?id=36158</id>
+  <updated>2026-10-28T14:00:02+09:00</updated>
+  <published>2026-10-28T14:00:02+09:00</published>
+  <author>
+    <name>acorn</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>모든 마이그레이션에 <strong>되돌리기 단계</strong>를 함께 작성하는 원칙 소개</li>
+<li>열 삭제는 두 번의 배포로 나눠 진행</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[한 줄짜리 셸 스크립트가 운영 도구가 되기까지]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36157' />
+  <id>https://news.hada.io/topic?id=36157</id>
+  <updated>2026-10-28T13:55:58+09:00</updated>
+  <published>2026-10-28T13:55:58+09:00</published>
+  <author>
+    <name>hazel</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>처음엔 한 줄이던 스크립트가 <strong>옵션과 예외 처리</strong>로 불어난 과정</li>
+<li>언제 제대로 된 프로그램으로 옮겨야 하는지에 대한 기준 제시</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[전자 잉크 화면으로 만든 탁상 달력]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36150' />
+  <id>https://news.hada.io/topic?id=36150</id>
+  <updated>2026-10-27T09:12:00+09:00</updated>
+  <published>2026-10-27T09:12:00+09:00</published>
+  <author>
+    <name>pinecone</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li><strong>전자 잉크</strong> 화면과 작은 보드로 하루 일정을 보여주는 달력 제작기</li>
+</ul>]]></content>
+</entry><entry>
+  <title><![CDATA[오래된 노트북을 홈 서버로 되살리기]]></title>
+  <link rel='alternate' type='text/html' href='https://news.hada.io/topic?id=36149' />
+  <id>https://news.hada.io/topic?id=36149</id>
+  <updated>2026-10-26T21:05:00+09:00</updated>
+  <published>2026-10-26T21:05:00+09:00</published>
+  <author>
+    <name>chestnut</name>
+  </author>
+  <content type='html' xml:lang='ko'><![CDATA[<ul>
+<li>배터리를 빼고 <strong>전원 관리 설정</strong>을 손본 뒤 1년째 무중단으로 운영 중</li>
+</ul>]]></content>
+</entry>
+</feed>

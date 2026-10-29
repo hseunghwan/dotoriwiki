@@ -1,0 +1,296 @@
+{
+  "exhaustive": {
+    "nbHits": true,
+    "typo": true
+  },
+  "exhaustiveNbHits": true,
+  "exhaustiveTypo": true,
+  "hits": [
+    {
+      "_tags": [
+        "story",
+        "author_quillfeather",
+        "story_80000112",
+        "front_page"
+      ],
+      "author": "quillfeather",
+      "children": [
+        80000119,
+        80000130,
+        80000141
+      ],
+      "created_at": "2026-10-28T12:49:45Z",
+      "created_at_i": 1793191785,
+      "num_comments": 412,
+      "objectID": "80000112",
+      "points": 914,
+      "story_id": 80000112,
+      "title": "Lessons from running a 30-year-old mail server in a closet",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.com/posts/closet-mail-server"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_tarnwick",
+        "story_80000109",
+        "show_hn",
+        "front_page"
+      ],
+      "author": "tarnwick",
+      "children": [
+        80000116,
+        80000127,
+        80000138
+      ],
+      "created_at": "2026-10-28T11:06:12Z",
+      "created_at_i": 1793185572,
+      "num_comments": 288,
+      "objectID": "80000109",
+      "points": 749,
+      "story_id": 80000109,
+      "title": "Show HN: Plaintext budgeting with a single Makefile",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.org/make-budget/"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_ollie_m",
+        "story_80000101",
+        "front_page"
+      ],
+      "author": "ollie_m",
+      "children": [
+        80000108,
+        80000119,
+        80000130
+      ],
+      "created_at": "2026-10-28T01:47:30Z",
+      "created_at_i": 1793152050,
+      "num_comments": 120,
+      "objectID": "80000101",
+      "points": 375,
+      "story_id": 80000101,
+      "title": "Why every map app gets ferry schedules wrong",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.net/ferries"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_brambleworks",
+        "story_80000097",
+        "ask_hn",
+        "front_page"
+      ],
+      "author": "brambleworks",
+      "children": [
+        80000104,
+        80000115,
+        80000126
+      ],
+      "created_at": "2026-10-27T19:54:03Z",
+      "created_at_i": 1793130843,
+      "num_comments": 516,
+      "objectID": "80000097",
+      "points": 402,
+      "story_id": 80000097,
+      "story_text": "<p>I have tried wikis, outliners and plain folders. After a year I can never find anything.<p>What has actually worked for you, and for how long?",
+      "title": "Ask HN: How do you keep notes you can find again?",
+      "updated_at": "2026-10-28T16:55:27Z"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_kestrel9",
+        "story_80000093",
+        "front_page"
+      ],
+      "author": "kestrel9",
+      "children": [
+        80000100,
+        80000111,
+        80000122
+      ],
+      "created_at": "2026-10-27T18:41:44Z",
+      "created_at_i": 1793126504,
+      "num_comments": 377,
+      "objectID": "80000093",
+      "points": 1235,
+      "story_id": 80000093,
+      "title": "The 640-byte bootloader that plays chess",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.com/tiny-chess-boot"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_mossgrove",
+        "story_80000088",
+        "front_page"
+      ],
+      "author": "mossgrove",
+      "children": [
+        80000095,
+        80000106,
+        80000117
+      ],
+      "created_at": "2026-10-27T16:55:19Z",
+      "created_at_i": 1793120119,
+      "num_comments": 94,
+      "objectID": "80000088",
+      "points": 386,
+      "story_id": 80000088,
+      "title": "A gentle introduction to CRDTs, with sourdough",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.org/crdt-sourdough.html"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_pellucid",
+        "story_80000084",
+        "front_page"
+      ],
+      "author": "pellucid",
+      "children": [
+        80000091,
+        80000102,
+        80000113
+      ],
+      "created_at": "2026-10-27T16:23:01Z",
+      "created_at_i": 1793118181,
+      "num_comments": 231,
+      "objectID": "80000084",
+      "points": 553,
+      "story_id": 80000084,
+      "title": "Our CDN bill dropped 70% after we stopped serving fonts",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.com/blog/fonts-and-cdn-costs"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_harrow_and_tine",
+        "story_80000079",
+        "front_page"
+      ],
+      "author": "harrow_and_tine",
+      "children": [
+        80000086,
+        80000097,
+        80000108
+      ],
+      "created_at": "2026-10-27T14:02:37Z",
+      "created_at_i": 1793109757,
+      "num_comments": 640,
+      "objectID": "80000079",
+      "points": 1046,
+      "story_id": 80000079,
+      "title": "Reading old manuals: what 1980s documentation got right",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.net/old-manuals"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_dunlin",
+        "story_80000075",
+        "front_page"
+      ],
+      "author": "dunlin",
+      "children": [
+        80000082,
+        80000093,
+        80000104
+      ],
+      "created_at": "2026-10-27T13:00:12Z",
+      "created_at_i": 1793106012,
+      "num_comments": 85,
+      "objectID": "80000075",
+      "points": 366,
+      "story_id": 80000075,
+      "title": "Fixing a heisenbug that only appeared on Tuesdays",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.org/tuesday-bug"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_saltmarsh",
+        "story_80000070",
+        "show_hn",
+        "front_page"
+      ],
+      "author": "saltmarsh",
+      "children": [
+        80000077,
+        80000088,
+        80000099
+      ],
+      "created_at": "2026-10-27T11:31:48Z",
+      "created_at_i": 1793100708,
+      "num_comments": 102,
+      "objectID": "80000070",
+      "points": 333,
+      "story_id": 80000070,
+      "title": "Show HN: Hedgehog, a tiny HTTP server in 300 lines of Zig",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.com/hedgehog"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_fennelseed",
+        "story_80000066",
+        "front_page"
+      ],
+      "author": "fennelseed",
+      "children": [
+        80000073,
+        80000084,
+        80000095
+      ],
+      "created_at": "2026-10-27T11:20:05Z",
+      "created_at_i": 1793100005,
+      "num_comments": 489,
+      "objectID": "80000066",
+      "points": 654,
+      "story_id": 80000066,
+      "title": "We tried four-day weeks for a year; here is the data",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.net/four-day-week-data"
+    },
+    {
+      "_tags": [
+        "story",
+        "author_gullwing",
+        "story_80000061",
+        "front_page"
+      ],
+      "author": "gullwing",
+      "children": [
+        80000068,
+        80000079,
+        80000090
+      ],
+      "created_at": "2026-10-27T07:21:40Z",
+      "created_at_i": 1793085700,
+      "num_comments": 199,
+      "objectID": "80000061",
+      "points": 468,
+      "story_id": 80000061,
+      "title": "The surprising physics of stacked chairs",
+      "updated_at": "2026-10-28T16:55:27Z",
+      "url": "https://example.org/stacked-chairs"
+    }
+  ],
+  "hitsPerPage": 50,
+  "nbHits": 12,
+  "nbPages": 1,
+  "page": 0,
+  "params": "tags=story&numericFilters=points%3E%3D300%2Ccreated_at_i%3E%3D1793076936&hitsPerPage=50",
+  "processingTimeMS": 1,
+  "query": ""
+}

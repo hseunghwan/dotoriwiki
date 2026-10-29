@@ -1,0 +1,36 @@
+{
+  "id": "dotoriWiki0",
+  "title": "SQLite 하나로 만드는 작업 큐: cron 40개를 정리한 방법",
+  "channel": "도토리랩",
+  "uploader": "도토리랩",
+  "duration": 79,
+  "duration_string": "1:19",
+  "upload_date": "20260308",
+  "description": "안녕하세요, 도토리랩의 한서윤입니다.\n\n서버마다 흩어진 cron 작업을 SQLite 테이블 하나로 모은 과정을 정리했습니다. 워커가 작업을 가져가는 방법, 실패한 작업을 다시 시도하는 방법, 그리고 이 방식이 맞지 않는 경우까지 짧게 다룹니다.\n\n타임라인\n00:00 인사와 오늘의 주제\n00:08 cron이 여러 서버에 흩어질 때 생기는 문제\n00:19 작업 테이블에 필요한 네 가지 열\n00:25 한 문장으로 작업 가져가기\n00:35 실패와 지수 백오프\n00:56 이 방식의 한계\n01:05 정리",
+  "language": "ko",
+  "webpage_url": "https://www.youtube.com/watch?v=dotoriWiki0",
+  "subtitles": {},
+  "automatic_captions": {
+    "en": [
+      {
+        "ext": "vtt",
+        "url": "https://www.youtube.com/api/timedtext?v=dotoriWiki0&caps=asr&kind=asr&lang=ko&tlang=en&fmt=vtt",
+        "name": "English"
+      }
+    ],
+    "ko-orig": [
+      {
+        "ext": "vtt",
+        "url": "https://www.youtube.com/api/timedtext?v=dotoriWiki0&caps=asr&kind=asr&lang=ko&fmt=vtt",
+        "name": "Korean (Original)"
+      }
+    ],
+    "ko": [
+      {
+        "ext": "vtt",
+        "url": "https://www.youtube.com/api/timedtext?v=dotoriWiki0&caps=asr&kind=asr&lang=ko&fmt=vtt",
+        "name": "Korean"
+      }
+    ]
+  }
+}

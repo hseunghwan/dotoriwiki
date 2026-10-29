@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang='ko'>
+<head>
+<meta charset='utf-8'>
+<title>40개의 cron 작업을 SQLite 큐 하나로 대체한 이야기 | GeekNews</title>
+<link rel='canonical' href='https://news.hada.io/topic?id=36168'>
+</head>
+<body>
+<header><a href='https://news.hada.io/' class='logo'>GeekNews</a> <a href='/new'>최신글</a> <a href='/ask'>Ask</a> <a href='/show'>Show</a></header>
+<main>
+<div class=topic data-topic-state-id='36168'>
+<div class='topictitle link'><a href='https://example.com/blog/2026/10/one-sqlite-queue/' class='bold ud topic-title-link'><h1>40개의 cron 작업을 SQLite 큐 하나로 대체한 이야기</h1></a> <span class=topicurl>(example.com)</span></div>
+<div class=topicinfo><span id='tp36168'>3</span>P by <a href='/@hazel'>hazel</a> <time datetime="2026-10-28T22:40:50+09:00">3시간전</time> | <a href='topic?id=36168'>댓글 1개</a></div>
+<div class=topic_contents><section id='topic_contents' class='article-content'><ul>
+<li>예약 작업 40여 개를 각 서버의 cron에서 꺼내 <strong>SQLite 테이블 하나로 된 작업 큐</strong>로 옮긴 경험 공유</li>
+<li>워커는 <code>UPDATE ... RETURNING</code> 한 문장으로 다음 작업을 가져가므로 <strong>별도의 잠금 서버가 필요 없음</strong></li>
+<li>실패한 작업은 지수 백오프로 재시도되고, 다섯 번 실패하면 <strong>보류 상태</strong>로 옮겨져 관리 화면에서 확인 가능</li>
+<li>전환 후 놓친 작업이 한 건도 없었고, 문제가 생겼을 때 볼 곳이 서버 12대에서 <strong>테이블 하나</strong>로 줄었음</li>
+<li>초당 수천 건을 넣는 서비스라면 쓰기 잠금 때문에 전용 메시지 브로커가 더 적합함</li>
+</ul></section></div>
+</div>
+<div class=comment_thread>
+<div class=comment_row><div class=commentinfo><a href='/@chestnut'>chestnut</a> 2시간전</div>
+<div class=comment_contents><p>저희도 비슷하게 운영 중인데, 보류 상태를 따로 두는 아이디어가 좋네요. 참고로 <a href='https://example.org/notes/job-tables'>이 글</a>도 같은 주제를 다룹니다.</p></div></div>
+</div>
+</main>
+<footer><a href='/about'>소개</a> <a href='/rss/news'>RSS</a></footer>
+</body>
+</html>

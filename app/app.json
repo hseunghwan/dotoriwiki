@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "LLM 위키",
+    "slug": "llmwiki",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "llmwiki",
+    "userInterfaceStyle": "automatic",
+    "platforms": [
+      "android"
+    ],
+    "android": {
+      "package": "com.cycle.llmwiki",
+      "adaptiveIcon": {
+        "backgroundColor": "#7559dd",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "monochromeImage": "./assets/images/android-icon-foreground.png"
+      },
+      "softwareKeyboardLayoutMode": "resize",
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#ffffff",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 160,
+          "dark": {
+            "backgroundColor": "#1e1e1e"
+          }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "./plugins/with-release-signing",
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "맥미니에 띄운 연결용 QR을 읽을 때만 카메라를 써요.",
+          "recordAudioAndroid": false,
+          "microphonePermission": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "메모를 쓰는 순간의 위치를 메모에 붙여요."
+        }
+      ],
+      "expo-secure-store",
+      "./plugins/with-capture-intents"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
