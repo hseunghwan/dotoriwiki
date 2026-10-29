@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openChatStore } from '../src/chats.ts';
 import { startHttp } from '../src/http.ts';
 import { parseModels, profileNames, routeLlm } from '../src/models.ts';
 import { parseWikiConfig, WikiConfigError, type ConfigParse, type DomainName, type WikiOptions } from '../src/wiki/index.ts';
@@ -88,7 +90,8 @@ const TOKEN = 'test-token-0123456789';
 
 async function serve(root: string, llm = fakeLlm(), extra: Partial<WikiOptions> = {}) {
   const wiki = await open(root, llm, extra);
-  const http = await startHttp({ wiki, chat: async function* () {}, token: TOKEN, serverVersion: '0.1.0', now: () => new Date('2026-10-29T00:00:00Z'), maxBodyBytes: 4096 }, { host: '127.0.0.1', port: 0 });
+  const chats = await openChatStore(await fs.mkdtemp(join(tmpdir(), 'dotoriwiki-chats-')));
+  const http = await startHttp({ wiki, chat: async function* () {}, chats, token: TOKEN, serverVersion: '0.1.0', now: () => new Date('2026-10-29T00:00:00Z'), maxBodyBytes: 4096 }, { host: '127.0.0.1', port: 0 });
   const call = async (method: string, path: string, body?: unknown) => {
     const res = await fetch(`http://127.0.0.1:${http.port}${path}`, {
       method, headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),

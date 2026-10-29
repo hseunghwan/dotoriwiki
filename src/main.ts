@@ -29,9 +29,10 @@
 
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { claudeCli } from './claude.ts';
 import { chatTurn } from './chat.ts';
+import { openChatStore } from './chats.ts';
 import { codexCli } from './codex.ts';
 import { execRun, sourceFetcher } from './enrich.ts';
 import { FEEDS, pollFeeds } from './feeds.ts';
@@ -49,13 +50,15 @@ export type Config = {
   readonly codexBin: string;
   readonly ytDlpBin: string;
   readonly modelsFile: string;
+  readonly chatsDir: string;
   readonly collectFeeds: boolean;
 };
 
 /**
  * WIKI_ROOT, GATEWAY_TOKEN required; PORT (8787), HOST (127.0.0.1, set the Tailscale address),
  * CLAUDE_BIN (claude), CODEX_BIN (codex), YT_DLP_BIN (yt-dlp), MODELS_FILE
- * (~/.config/llmwiki/models.json), COLLECT_FEEDS (on; `off` for a test gateway) optional.
+ * (~/.config/llmwiki/models.json), CHATS_DIR (~/.local/share/llmwiki/chats), COLLECT_FEEDS (on;
+ * `off` for a test gateway) optional.
  */
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
   const wikiRoot = env.WIKI_ROOT ?? '';
@@ -68,7 +71,14 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   if (host === '0.0.0.0' || host === '::') throw new Error('HOST must be one address (the Tailscale one), not all interfaces');
   const modelsFile = env.MODELS_FILE ?? join(homedir(), '.config', 'llmwiki', 'models.json');
   if (!isAbsolute(modelsFile)) throw new Error('MODELS_FILE must be an absolute path');
-  return { wikiRoot, host, port, token, claudeBin: env.CLAUDE_BIN ?? 'claude', codexBin: env.CODEX_BIN || 'codex', ytDlpBin: env.YT_DLP_BIN ?? 'yt-dlp', modelsFile, collectFeeds: env.COLLECT_FEEDS !== 'off' };
+  const chatsDir = env.CHATS_DIR ?? join(homedir(), '.local', 'share', 'llmwiki', 'chats');
+  if (!isAbsolute(chatsDir)) throw new Error('CHATS_DIR must be an absolute path');
+  const fromWiki = relative(wikiRoot, chatsDir);
+  if (fromWiki !== '..' && !fromWiki.startsWith('../')) throw new Error('CHATS_DIR must be outside WIKI_ROOT: chat transcripts never enter the wiki');
+  return {
+    wikiRoot, host, port, token, claudeBin: env.CLAUDE_BIN ?? 'claude', codexBin: env.CODEX_BIN || 'codex', ytDlpBin: env.YT_DLP_BIN ?? 'yt-dlp', modelsFile, chatsDir,
+    collectFeeds: env.COLLECT_FEEDS !== 'off',
+  };
 }
 
 function serverVersion(): string {
@@ -98,13 +108,17 @@ async function main(): Promise<void> {
     collector: !cfg.collectFeeds ? null : { poll: async () => pollFeeds(FEEDS, await wiki.config(), { http: fetch, accept: (m) => wiki.accept(m), now: () => new Date() }), firstMs: 60_000, everyMs: 3 * 3_600_000 },
     onReport: (where, r) => log(where, r),
   });
+  const chats = await openChatStore(cfg.chatsDir);
   const http = await startHttp(
-    { wiki, chat: (turn, signal) => chatTurn({ wiki, claude }, turn, signal), token: cfg.token, serverVersion: serverVersion(), now: () => new Date(), maxBodyBytes: 256 * 1024 },
+    {
+      wiki, chat: (turn, signal) => chatTurn({ wiki, claude }, turn, signal), chats, token: cfg.token, serverVersion: serverVersion(), now: () => new Date(),
+      maxBodyBytes: 256 * 1024,
+    },
     { host: cfg.host, port: cfg.port },
   );
   const { paused, problems } = await wiki.status();
   log('main', {
-    listening: `http://${cfg.host}:${http.port}`, wikiRoot: cfg.wikiRoot, config: { state: paused ? 'paused' : 'ok', problems },
+    listening: `http://${cfg.host}:${http.port}`, wikiRoot: cfg.wikiRoot, chatsDir: cfg.chatsDir, config: { state: paused ? 'paused' : 'ok', problems },
     models: { ...models, edit: { default: models.edit.default, ...Object.fromEntries(models.edit.profiles) } },
   });
 

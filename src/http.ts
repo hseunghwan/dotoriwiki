@@ -8,11 +8,15 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { AnswerResponse, ChatFrame, ErrorResponse, HeldResponse, MemoListResponse, ReleaseResponse, RetryResponse, StatusResponse } from './api.ts';
+import type {
+  AnswerResponse, ChatDetailWire, ChatFrame, ChatListResponse, ChatSummaryWire, ErrorResponse, HeldResponse, MemoListResponse, ReleaseResponse, RetryResponse,
+  StatusResponse,
+} from './api.ts';
 import type { ChatOut, ChatTurn } from './chat.ts';
+import { parseChatId, type ChatCursor, type ChatId, type ChatSession, type ChatStore } from './chats.ts';
 import {
-  domainIn, pageRefString, parseAnswerId, parseMemoId, parsePageRef, WikiConfigError, type AnswerFiling, type JobRef, type MemoCursor, type MemoId,
-  type Parsed, type PageRef, type ReleaseResult, type Wiki,
+  domainIn, pageRefString, parseAnswerId, parseMemoId, parsePageRef, WikiConfigError, type AnswerFiling, type ChatTarget, type JobRef, type MemoCursor,
+  type MemoId, type Parsed, type PageRef, type ReleaseResult, type Wiki,
 } from './wiki/index.ts';
 import { handleMcp } from './mcp.ts';
 import { acceptMemo, detailWire, listItem } from './wire.ts';
@@ -20,6 +24,7 @@ import { acceptMemo, detailWire, listItem } from './wire.ts';
 export type HttpDeps = {
   readonly wiki: Wiki;
   readonly chat: (turn: ChatTurn, signal: AbortSignal) => AsyncIterable<ChatOut>;
+  readonly chats: ChatStore;
   readonly token: string;
   readonly serverVersion: string;
   readonly now: () => Date;
@@ -30,10 +35,10 @@ export type Listen = { readonly host: string; readonly port: number };
 
 type Reply = { readonly status: number; readonly body: unknown };
 const json = (status: number, body: unknown): Reply => ({ status, body });
+const noContent: Reply = { status: 204, body: null };
 const error = (status: number, code: ErrorResponse['error'], detail?: string): Reply => json(status, { error: code, ...(detail ? { detail } : {}) } satisfies ErrorResponse);
 const bad = (detail: string): { ok: false; detail: string } => ({ ok: false, detail });
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const digest = (s: string) => createHash('sha256').update(s).digest();
 function authorized(req: IncomingMessage, token: string): boolean {
@@ -106,18 +111,21 @@ export async function parseChatRequest(body: unknown, wiki: Wiki): Promise<Parse
   const message = nonEmpty(body.message, 'message');
   if (!message.ok) return message;
   const sid = body.session_id;
-  if (sid !== undefined && sid !== null && (typeof sid !== 'string' || !UUID.test(sid))) return bad('session_id: expected a UUID');
-  return {
-    ok: true,
-    value: { target: typeof target === 'string' ? { kind: 'domain', domain: target } : target, message: message.value, sessionId: typeof sid === 'string' ? sid : null },
-  };
+  const sessionId = typeof sid === 'string' ? parseChatId(sid) : null;
+  if (sid !== undefined && sid !== null && !sessionId) return bad('session_id: expected a UUID');
+  return { ok: true, value: { target: typeof target === 'string' ? { kind: 'domain', domain: target } : target, message: message.value, sessionId } };
+}
+
+function parseLimit(q: URLSearchParams): number | null {
+  const raw = q.get('limit');
+  const limit = raw === null ? 30 : /^\d{1,3}$/.test(raw) ? Number(raw) : 0;
+  return limit >= 1 && limit <= 100 ? limit : null;
 }
 
 export function parseMemoListQuery(url: string): Parsed<{ limit: number; before: MemoCursor | null }> {
   const q = new URL(url, 'http://localhost').searchParams;
-  const rawLimit = q.get('limit');
-  const limit = rawLimit === null ? 30 : /^\d{1,3}$/.test(rawLimit) ? Number(rawLimit) : 0;
-  if (limit < 1 || limit > 100) return bad('limit: an integer from 1 to 100');
+  const limit = parseLimit(q);
+  if (limit === null) return bad('limit: an integer from 1 to 100');
   // A client that forgets to percent-encode sends the offset's `+` as a space; no cursor has a space.
   const before = q.get('before')?.replaceAll(' ', '+') ?? null;
   if (before === null) return { ok: true, value: { limit, before: null } };
@@ -126,6 +134,20 @@ export function parseMemoListQuery(url: string): Parsed<{ limit: number; before:
   const id = bar < 0 ? null : parseMemoId(before.slice(bar + 1));
   if (Number.isNaN(Date.parse(capturedAt)) || (bar >= 0 && !id)) return bad('before: expected a next_before value');
   return { ok: true, value: { limit, before: { capturedAt, id } } };
+}
+
+/** The cursor is always `<updated_at>|<session_id>`. */
+export function parseChatListQuery(url: string): Parsed<{ limit: number; before: ChatCursor | null }> {
+  const q = new URL(url, 'http://localhost').searchParams;
+  const limit = parseLimit(q);
+  if (limit === null) return bad('limit: an integer from 1 to 100');
+  const before = q.get('before')?.replaceAll(' ', '+') ?? null;
+  if (before === null) return { ok: true, value: { limit, before: null } };
+  const bar = before.lastIndexOf('|');
+  const id = bar < 0 ? null : parseChatId(before.slice(bar + 1));
+  const updatedAt = before.slice(0, bar);
+  if (!id || Number.isNaN(Date.parse(updatedAt))) return bad('before: expected a next_before value');
+  return { ok: true, value: { limit, before: { updatedAt, id } } };
 }
 
 export async function parseRetryRequest(body: unknown, wiki: Wiki): Promise<Parsed<JobRef>> {
@@ -161,13 +183,16 @@ async function postRetry(deps: HttpDeps, body: unknown): Promise<Reply> {
   return r.kind === 'retrying' ? json(200, { status: 'retrying' } satisfies RetryResponse) : error(409, 'conflict', 'job has not given up');
 }
 
-function memoIdParam(param: string | null): Parsed<MemoId> {
-  let id: MemoId | null = null;
+function idParam<T>(param: string | null, parse: (s: string) => T | null): T | null {
   try {
-    id = param === null ? null : parseMemoId(decodeURIComponent(param));
+    return param === null ? null : parse(decodeURIComponent(param));
   } catch {
-    id = null;
+    return null;
   }
+}
+
+function memoIdParam(param: string | null): Parsed<MemoId> {
+  const id = idParam(param, parseMemoId);
   return id ? { ok: true, value: id } : bad('id: expected a ULID or UUID');
 }
 
@@ -248,10 +273,27 @@ function frame(out: ChatOut): ChatFrame {
   }
 }
 
-/** Writes one SSE frame per ChatOut; the turn is aborted (its claude process killed) if the client goes away. */
-async function postChat(deps: HttpDeps, body: unknown, req: IncomingMessage, res: ServerResponse): Promise<Reply | null> {
+const targetName = (t: ChatTarget) => (t.kind === 'root' ? 'root' : t.domain);
+
+/**
+ * Writes one SSE frame per ChatOut; the turn is aborted (its claude process killed) if the client
+ * goes away. When the stream ends the turn is kept: an answer always, a failure unless the client left.
+ */
+async function postChat(deps: HttpDeps, body: unknown, _req: IncomingMessage, res: ServerResponse): Promise<Reply | null> {
   const parsed = await parseChatRequest(body, deps.wiki);
   if (!parsed.ok) return error(400, 'bad_request', parsed.detail);
+  const turn = parsed.value;
+  const target = targetName(turn.target);
+  let id: ChatId | null = turn.sessionId;
+  let release: (() => void) | null = null;
+  if (id) {
+    const session = await deps.chats.get(id);
+    if (!session) return error(404, 'not_found', 'no such chat');
+    if (session.target !== target) return error(409, 'conflict', `chat belongs to ${session.target}`);
+    release = deps.chats.claim(id);
+    if (!release) return error(409, 'conflict', 'a turn on this chat is in flight');
+  }
+
   const abort = new AbortController();
   res.on('close', () => abort.abort());
   res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
@@ -259,18 +301,76 @@ async function postChat(deps: HttpDeps, body: unknown, req: IncomingMessage, res
     const { type, ...data } = f;
     res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
   };
+  let answer = '';
+  let cited: string[] | null = null;
+  let failure = 'no answer';
   try {
-    for await (const out of deps.chat(parsed.value, abort.signal)) send(frame(out));
+    for await (const out of deps.chat(turn, abort.signal)) {
+      if (out.kind === 'session' && !id) {
+        id = parseChatId(out.sessionId);
+        if (id) {
+          await deps.chats.begin(id, target, deps.now().toISOString());
+          release = deps.chats.claim(id);
+        }
+      } else if (out.kind === 'text') answer += out.text;
+      else if (out.kind === 'done') cited = out.cited.map(pageRefString);
+      else if (out.kind === 'error') failure = out.message;
+      send(frame(out));
+    }
   } catch (e) {
-    send({ type: 'error', message: (e as Error).message });
+    failure = (e as Error).message;
+    send({ type: 'error', message: failure });
   }
-  res.end();
+  try {
+    const at = deps.now().toISOString();
+    if (id && cited) await deps.chats.append(id, { type: 'turn', at, question: turn.message, answer, cited });
+    else if (id && !abort.signal.aborted) await deps.chats.append(id, { type: 'error', at, question: turn.message, message: failure });
+  } finally {
+    release?.();
+    res.end();
+  }
   return null;
+}
+
+function chatTitle(s: ChatSession): string {
+  const first = Array.from((s.records[0]?.question ?? '').replace(/\s+/g, ' ').trim());
+  return first.length > 40 ? `${first.slice(0, 39).join('')}…` : first.join('');
+}
+
+const chatSummary = (s: ChatSession): ChatSummaryWire => ({
+  session_id: s.id, target: s.target, title: chatTitle(s), created_at: s.createdAt, updated_at: s.updatedAt, turns: s.records.length,
+});
+
+async function getChats(deps: HttpDeps, req: IncomingMessage): Promise<Reply> {
+  const q = parseChatListQuery(req.url ?? '');
+  if (!q.ok) return error(400, 'bad_request', q.detail);
+  const rows = await deps.chats.list({ limit: q.value.limit + 1, before: q.value.before });
+  const page = rows.slice(0, q.value.limit);
+  const last = page.at(-1);
+  const nextBefore = rows.length > page.length && last ? `${last.updatedAt}|${last.id}` : null;
+  return json(200, { chats: page.map(chatSummary), next_before: nextBefore } satisfies ChatListResponse);
+}
+
+async function getChat(deps: HttpDeps, param: string | null): Promise<Reply> {
+  const id = idParam(param, parseChatId);
+  if (!id) return error(400, 'bad_request', 'id: expected a UUID');
+  const s = await deps.chats.get(id);
+  if (!s) return error(404, 'not_found', 'no such chat');
+  const turns = s.records.map((r) =>
+    r.type === 'turn' ? { at: r.at, question: r.question, answer: r.answer, cited: r.cited } : { at: r.at, question: r.question, error: r.message },
+  );
+  return json(200, { session_id: s.id, target: s.target, created_at: s.createdAt, turns } satisfies ChatDetailWire);
+}
+
+async function deleteChat(deps: HttpDeps, param: string | null): Promise<Reply> {
+  const id = idParam(param, parseChatId);
+  if (!id) return error(400, 'bad_request', 'id: expected a UUID');
+  return (await deps.chats.delete(id)) ? noContent : error(404, 'not_found', 'no such chat');
 }
 
 const mcpMethodNotAllowed = json(405, { jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null });
 
-/** `param` is the raw `:id` path segment of a /memos/:id route. */
+/** `param` is the raw `:id` path segment of a /memos/:id or /chats/:id route. */
 type Route = (deps: HttpDeps, body: unknown, req: IncomingMessage, res: ServerResponse, param: string | null) => Promise<Reply | null>;
 const ROUTES: Record<string, Route> = {
   'POST /memos': (d, b) => postMemo(d, b),
@@ -282,6 +382,9 @@ const ROUTES: Record<string, Route> = {
   'POST /answers': (d, b) => postAnswer(d, b),
   'POST /jobs/retry': (d, b) => postRetry(d, b),
   'POST /chat': postChat,
+  'GET /chats': (d, _b, q) => getChats(d, q),
+  'GET /chats/:id': (d, _b, _q, _s, id) => getChat(d, id),
+  'DELETE /chats/:id': (d, _b, _q, _s, id) => deleteChat(d, id),
   'GET /status': (d) => getStatus(d),
   'POST /mcp': (d, b, q, s) => handleMcp(d, b, q, s).then(() => null),
   // Stateless MCP: no server-initiated stream to GET and no session to DELETE.
@@ -293,17 +396,18 @@ export async function startHttp(deps: HttpDeps, listen: Listen): Promise<{ reado
   const server = createServer((req, res) => {
     void (async () => {
       const send = (r: Reply) => {
+        if (r.body === null) return void res.writeHead(r.status).end();
         res.writeHead(r.status, { 'content-type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify(r.body));
       };
       try {
         if (!authorized(req, deps.token)) return send(error(401, 'unauthorized'));
         const path = (req.url ?? '').split('?')[0]!;
-        const memoAction = /^\/memos\/([^/]+)(\/[a-z]+)?$/.exec(path);
-        const route = ROUTES[`${req.method} ${memoAction ? `/memos/:id${memoAction[2] ?? ''}` : path}`];
+        const withId = /^\/(memos|chats)\/([^/]+)(\/[a-z]+)?$/.exec(path);
+        const route = ROUTES[`${req.method} ${withId ? `/${withId[1]}/:id${withId[3] ?? ''}` : path}`];
         if (!route) return send(error(404, 'not_found'));
         const body = req.method === 'POST' ? await readJson(req, deps.maxBodyBytes) : null;
-        const reply = await route(deps, body, req, res, memoAction ? memoAction[1]! : null);
+        const reply = await route(deps, body, req, res, withId ? withId[2]! : null);
         if (reply) send(reply);
       } catch (e) {
         if (res.headersSent) return void res.end();

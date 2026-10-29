@@ -2,29 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { startHttp } from '../src/http.ts';
 import type { ChatOut } from '../src/chat.ts';
 import type { DomainName } from '../src/wiki/index.ts';
-import { fakeLlm, listDir, open, tempWiki } from './helpers.ts';
+import { listDir, serveHttp } from './helpers.ts';
 
-const TOKEN = 'test-token-0123456789';
-
-async function serve(chat: () => AsyncIterable<ChatOut> = async function* () {}) {
-  const root = await tempWiki();
-  const llm = fakeLlm();
-  const wiki = await open(root, llm);
-  const http = await startHttp({ wiki, chat, token: TOKEN, serverVersion: '0.1.0', now: () => new Date('2026-10-29T00:00:00Z'), maxBodyBytes: 4096 }, { host: '127.0.0.1', port: 0 });
-  const call = async (method: string, path: string, body?: unknown, token = TOKEN) => {
-    const res = await fetch(`http://127.0.0.1:${http.port}${path}`, {
-      method,
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
-    });
-    const text = await res.text();
-    return { status: res.status, body: res.headers.get('content-type')?.startsWith('application/json') ? JSON.parse(text) : text };
-  };
-  return { root, wiki, llm, call, close: async () => (await http.close(), await wiki.close()) };
-}
+const serve = (chat: () => AsyncIterable<ChatOut> = async function* () {}) => serveHttp({ chat });
 
 const memoBody = {
   id: '3f1d2c4b-5a69-4e7f-8a1b-2c3d4e5f6a7b',

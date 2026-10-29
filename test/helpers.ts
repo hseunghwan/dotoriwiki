@@ -3,6 +3,8 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openChatStore } from '../src/chats.ts';
+import { startHttp, type HttpDeps } from '../src/http.ts';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import {
   openWiki, parseMemo, type ClassifyRequest, type Classification, type EditRequest, type EditResult, type FetchedSource, type FetchSource,
@@ -131,3 +133,31 @@ export const commitSubjects = (root: string) => git(root, 'log', '--format=%s').
 export const ledgerLines = (root: string, d: string) => (headFile(root, `${d}/wiki/log.md`) ?? '').split('\n').filter((l) => l.startsWith('## ['));
 export const readText = (path: string) => fs.readFile(path, 'utf8').catch(() => null);
 export const listDir = (path: string) => fs.readdir(path).then((n) => n.filter((x) => !x.startsWith('.')).sort(), () => [] as string[]);
+
+export const TOKEN = 'test-token-0123456789';
+
+/** A gateway on a fresh fixture wiki and an empty chat store, with a `call` that parses JSON replies. */
+export async function serveHttp(opts: { chat?: HttpDeps['chat']; now?: () => Date } = {}) {
+  const root = await tempWiki();
+  const chatsDir = await fs.mkdtemp(join(process.env.LLMWIKI_TEST_TMP ?? tmpdir(), 'llmwiki-chats-'));
+  const llm = fakeLlm();
+  const wiki = await open(root, llm);
+  const http = await startHttp(
+    {
+      wiki, chat: opts.chat ?? async function* () {}, chats: await openChatStore(chatsDir), token: TOKEN, serverVersion: '0.1.0',
+      now: opts.now ?? (() => new Date('2026-10-29T00:00:00Z')), maxBodyBytes: 4096,
+    },
+    { host: '127.0.0.1', port: 0 },
+  );
+  const base = `http://127.0.0.1:${http.port}`;
+  const call = async (method: string, path: string, body?: unknown, token = TOKEN) => {
+    const res = await fetch(`${base}${path}`, {
+      method,
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
+    });
+    const text = await res.text();
+    return { status: res.status, body: res.headers.get('content-type')?.startsWith('application/json') ? JSON.parse(text) : text };
+  };
+  return { root, chatsDir, base, wiki, llm, call, close: async () => (await http.close(), await wiki.close()) };
+}

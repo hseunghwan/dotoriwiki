@@ -8,8 +8,9 @@
 
 import type { ChatTarget, PageRef, Wiki } from './wiki/index.ts';
 import type { Claude } from './claude.ts';
+import type { ChatId } from './chats.ts';
 
-export type ChatTurn = { readonly target: ChatTarget; readonly message: string; readonly sessionId: string | null };
+export type ChatTurn = { readonly target: ChatTarget; readonly message: string; readonly sessionId: ChatId | null };
 
 export type ChatOut =
   | { readonly kind: 'session'; readonly sessionId: string }

@@ -32,7 +32,7 @@ section(`wiki copy at ${root}`);
 
 const logFile = join(work, 'gateway.log');
 const server = spawn(process.execPath, [join(app, 'src', 'main.ts')], {
-  env: { ...process.env, WIKI_ROOT: root, PORT: '0', GATEWAY_TOKEN: token },
+  env: { ...process.env, WIKI_ROOT: root, CHATS_DIR: join(work, 'chats'), PORT: '0', GATEWAY_TOKEN: token },
   stdio: ['ignore', 'inherit', 'pipe'],
 });
 const log = createWriteStream(logFile);

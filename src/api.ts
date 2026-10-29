@@ -97,6 +97,30 @@ export type ChatFrame =
   | { type: 'done'; session_id: string; cited: string[] }
   | { type: 'error'; message: string };
 
+/**
+ * The gateway keeps each chat session, outside the wiki. A POST /chat with a session_id runs on
+ * the session's stored target: an unknown session is 404, a different target or a turn already in
+ * flight on it is 409. A turn the client aborts is not kept.
+ */
+export type ChatSummaryWire = {
+  session_id: string;
+  target: string;
+  /** The first question, about 40 characters. */
+  title: string;
+  created_at: string;
+  updated_at: string;
+  turns: number;
+};
+
+/** GET /chats?limit=<1..100, default 30>&before=<next_before>: newest updated first. */
+export type ChatListResponse = { chats: ChatSummaryWire[]; next_before: string | null };
+
+/** A turn that failed mid-stream carries `error` instead of `answer`. */
+export type ChatTurnWire = { at: string; question: string; answer: string; cited: string[] } | { at: string; question: string; error: string };
+
+/** GET /chats/:id, or 404. DELETE /chats/:id answers 204, or 404. */
+export type ChatDetailWire = { session_id: string; target: string; created_at: string; turns: ChatTurnWire[] };
+
 export type StatusResponse = {
   server: string;
   inbox: number;
