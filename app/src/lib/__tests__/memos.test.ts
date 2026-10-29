@@ -43,6 +43,7 @@ it('groups by local day as 오늘, 어제, then dates', () => {
       { captured_at: '2025-12-31T12:00:00+09:00' },
     ],
     now,
+    (m) => m.captured_at,
   );
   expect(groups.map((g) => [g.label, g.items.length])).toEqual([['오늘', 2], ['어제', 1], ['10월 27일', 1], ['2025년 12월 31일', 1]]);
 });

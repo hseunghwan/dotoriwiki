@@ -1,29 +1,23 @@
 import * as Clipboard from 'expo-clipboard';
 import * as Crypto from 'expo-crypto';
-import { useEffect, useRef, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ScrollViewInstance } from 'react-native';
-import { gateway } from '../../lib/gateway';
+import { answerId, EMPTY, fromDetail, isStreaming, ROOT, type Conversation, type Turn } from '../../lib/chats';
+import { gateway, type Failure } from '../../lib/gateway';
 import { answerSpans, pageLabel } from '../../lib/markdown';
 import type { ChatFrame } from '../../lib/wire';
 import { capture, useApp } from '../../state';
-import { Icon } from '../../ui/icon';
+import { Icon, type IconName } from '../../ui/icon';
 import { Chip, Screen, ScreenTitle } from '../../ui/parts';
 import { useTheme } from '../../ui/theme';
 
-const ROOT = 'root';
-
-type Turn = {
-  id: string;
-  question: string;
-  answer: string;
-  cited: string[];
-  status: 'streaming' | 'done' | 'error';
-  error: string | null;
-  saved: 'no' | 'saving' | 'saved' | 'failed';
-  remembered: 'no' | 'saved';
-};
-/** One conversation per target, kept for the screen's life so switching chips does not lose it. */
-type Thread = { sessionId: string | null; turns: Turn[] };
+function chatFailure(f: Failure): string {
+  if (f.kind === 'unreachable') return '맥미니에 연결하지 못했어요.';
+  if (f.kind === 'http' && f.status === 404) return '이 대화는 지워졌어요. 새 대화에서 다시 물어봐 주세요.';
+  if (f.kind === 'http' && f.status === 409) return '이 대화의 앞 질문이 아직 끝나지 않았어요.';
+  return '답을 받지 못했어요.';
+}
 
 const citedDomain = (cited: string) => (cited.includes('/wiki/') ? cited.split('/wiki/')[0]! : null);
 
@@ -52,18 +46,80 @@ function ActButton({ label, icon, on, onPress, small }: { label: string; icon: '
   );
 }
 
+function HeaderButton({ icon, label, onPress, disabled }: { icon: IconName; label: string; onPress: () => void; disabled?: boolean }) {
+  const t = useTheme();
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }} disabled={disabled} onPress={onPress} style={st.headerButton}>
+      <Icon name={icon} size={20} color={disabled ? t.faint : t.muted} />
+    </Pressable>
+  );
+}
+
 export default function Chat() {
   const t = useTheme();
   const pairing = useApp((a) => a.pairing);
   const domains = useApp((a) => a.domains);
+  const { open } = useLocalSearchParams<{ open?: string }>();
   const [target, setTarget] = useState(ROOT);
-  const [threads, setThreads] = useState<Record<string, Thread>>({});
+  /** A target with no entry has not been loaded from the gateway yet. */
+  const [convs, setConvs] = useState<Record<string, Conversation>>({});
+  const convsRef = useRef(convs);
+  convsRef.current = convs;
   const [draft, setDraft] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const scroll = useRef<ScrollViewInstance>(null);
   const aborts = useRef(new Set<AbortController>());
 
   useEffect(() => () => aborts.current.forEach((a) => a.abort()), []);
+
+  /** Replaces the target's conversation with the gateway copy, unless a turn started meanwhile. 404 means it was deleted. */
+  const reload = useCallback(
+    async (key: string, sessionId: string) => {
+      if (!pairing) return;
+      const d = await gateway.chatDetail(pairing, sessionId);
+      const gone = !d.ok && d.failure.kind === 'http' && d.failure.status === 404;
+      if (!d.ok && !gone) return;
+      setConvs((all) => {
+        const c = all[key];
+        if (c?.sessionId !== sessionId || isStreaming(c)) return all;
+        return { ...all, [key]: d.ok ? fromDetail(d.data, c) : EMPTY };
+      });
+    },
+    [pairing],
+  );
+
+  /** First visit to a target: its most recent conversation, or a new one. Offline leaves it unloaded to retry on focus. */
+  const loadLatest = useCallback(
+    async (key: string) => {
+      if (!pairing) return;
+      const list = await gateway.chats(pairing, null, 100);
+      if (!list.ok) return;
+      const latest = list.data.chats.find((c) => c.target === key);
+      const d = latest ? await gateway.chatDetail(pairing, latest.session_id) : null;
+      if (d && !d.ok) return;
+      setConvs((all) => (all[key] ? all : { ...all, [key]: d ? fromDetail(d.data, undefined) : EMPTY }));
+    },
+    [pairing],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      const c = convsRef.current[target];
+      if (!c) void loadLatest(target);
+      else if (c.sessionId && !isStreaming(c)) void reload(target, c.sessionId);
+    }, [target, loadLatest, reload]),
+  );
+
+  useEffect(() => {
+    if (!open || !pairing) return;
+    router.setParams({ open: undefined });
+    void (async () => {
+      const d = await gateway.chatDetail(pairing, open);
+      if (!d.ok) return setToast('대화를 열지 못했어요.');
+      setTarget(d.data.target);
+      setConvs((all) => (isStreaming(all[d.data.target]) ? all : { ...all, [d.data.target]: fromDetail(d.data, all[d.data.target]) }));
+    })();
+  }, [open, pairing]);
   useEffect(() => {
     if (!toast) return;
     // The toast takes room above the input; keep the buttons it would cover in view.
@@ -72,62 +128,69 @@ export default function Chat() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const thread = threads[target] ?? { sessionId: null, turns: [] };
-  const busy = thread.turns.at(-1)?.status === 'streaming';
+  const conv = convs[target] ?? EMPTY;
+  const busy = isStreaming(conv);
 
-  function update(key: string, f: (th: Thread) => Thread) {
-    setThreads((all) => ({ ...all, [key]: f(all[key] ?? { sessionId: null, turns: [] }) }));
+  function update(key: string, f: (c: Conversation) => Conversation) {
+    setConvs((all) => ({ ...all, [key]: f(all[key] ?? EMPTY) }));
   }
-  const updateTurn = (key: string, id: string, f: (turn: Turn) => Turn) => update(key, (th) => ({ ...th, turns: th.turns.map((x) => (x.id === id ? f(x) : x)) }));
+  const updateTurn = (key: string, turnKey: string, f: (turn: Turn) => Turn) =>
+    update(key, (c) => ({ ...c, turns: c.turns.map((x) => (x.key === turnKey ? f(x) : x)) }));
 
   async function ask() {
     const message = draft.trim();
     if (!message || !pairing || busy) return;
     const key = target;
-    const id = Crypto.randomUUID();
+    const turnKey = Crypto.randomUUID();
+    let sessionId = convs[key]?.sessionId ?? null;
     setDraft('');
-    update(key, (th) => ({ ...th, turns: [...th.turns, { id, question: message, answer: '', cited: [], status: 'streaming', error: null, saved: 'no', remembered: 'no' }] }));
+    update(key, (c) => ({ ...c, turns: [...c.turns, { key: turnKey, question: message, answer: '', cited: [], status: 'streaming', error: null, saved: 'no', remembered: 'no' }] }));
 
     const onFrame = (f: ChatFrame) => {
-      if (f.type === 'session') update(key, (th) => ({ ...th, sessionId: f.session_id }));
-      else if (f.type === 'delta') updateTurn(key, id, (x) => ({ ...x, answer: x.answer + f.text }));
-      else if (f.type === 'done') {
-        update(key, (th) => ({ ...th, sessionId: f.session_id }));
-        updateTurn(key, id, (x) => ({ ...x, cited: f.cited, status: 'done' }));
-      } else updateTurn(key, id, (x) => ({ ...x, status: 'error', error: f.message }));
+      if (f.type === 'session') {
+        sessionId = f.session_id;
+        update(key, (c) => ({ ...c, sessionId: f.session_id }));
+      } else if (f.type === 'delta') updateTurn(key, turnKey, (x) => ({ ...x, answer: x.answer + f.text }));
+      else if (f.type === 'done') updateTurn(key, turnKey, (x) => ({ ...x, cited: f.cited, status: 'done' }));
+      else updateTurn(key, turnKey, (x) => ({ ...x, status: 'error', error: f.message }));
     };
     const abort = new AbortController();
     aborts.current.add(abort);
-    const r = await gateway.chat(pairing, { target: key, message, session_id: threads[key]?.sessionId ?? null }, abort.signal, onFrame);
+    const r = await gateway.chat(pairing, { target: key, message, session_id: sessionId }, abort.signal, onFrame);
     aborts.current.delete(abort);
-    updateTurn(key, id, (x) =>
-      x.status !== 'streaming'
-        ? x
-        : r.ok
-          ? { ...x, status: 'done' }
-          : { ...x, status: 'error', error: r.failure.kind === 'unreachable' ? '맥미니에 연결하지 못했어요.' : '답을 받지 못했어요.' },
-    );
+    if (abort.signal.aborted) return;
+    updateTurn(key, turnKey, (x) => (x.status !== 'streaming' ? x : r.ok ? { ...x, status: 'done' } : { ...x, status: 'error', error: chatFailure(r.failure) }));
+    if (r.ok && sessionId) await reload(key, sessionId);
   }
 
-  async function saveAnswer(key: string, turn: Turn) {
+  async function saveAnswer(key: string, turn: Turn, index: number) {
     const domain = answerDomain(key, turn);
-    if (!pairing || !domain || turn.saved === 'saving' || turn.saved === 'saved') return;
-    updateTurn(key, turn.id, (x) => ({ ...x, saved: 'saving' }));
-    const r = await gateway.answer(pairing, { id: turn.id, domain, question: turn.question, answer: turn.answer, cited: turn.cited, session_id: threads[key]?.sessionId ?? null });
-    updateTurn(key, turn.id, (x) => ({ ...x, saved: r.ok ? 'saved' : 'failed' }));
+    const sessionId = convs[key]?.sessionId;
+    if (!pairing || !domain || !sessionId || turn.saved === 'saving' || turn.saved === 'saved') return;
+    updateTurn(key, turn.key, (x) => ({ ...x, saved: 'saving' }));
+    const r = await gateway.answer(pairing, {
+      id: answerId(sessionId, index), domain, question: turn.question, answer: turn.answer, cited: turn.cited, session_id: sessionId,
+    });
+    updateTurn(key, turn.key, (x) => ({ ...x, saved: r.ok ? 'saved' : 'failed' }));
     setToast(r.ok ? `${domain} 위키의 answers에 저장했어요` : '저장하지 못했어요. 연결을 확인해 주세요.');
   }
 
   async function remember(key: string, turn: Turn) {
     if (turn.remembered === 'saved') return;
     await capture({ text: turn.question, source: 'chat', domainHint: key === ROOT ? null : key, location: null });
-    updateTurn(key, turn.id, (x) => ({ ...x, remembered: 'saved' }));
+    updateTurn(key, turn.key, (x) => ({ ...x, remembered: 'saved' }));
   }
 
   return (
     <Screen>
       <View style={[st.header, { borderBottomColor: t.line }]}>
-        <ScreenTitle title="질문" mark />
+        <View style={st.titleRow}>
+          <ScreenTitle title="질문" mark />
+          <View style={{ flexDirection: 'row' }}>
+            <HeaderButton icon="plus" label="새 대화" disabled={busy || conv.turns.length === 0} onPress={() => update(target, () => EMPTY)} />
+            <HeaderButton icon="history" label="지난 대화" onPress={() => router.push('/chats')} />
+          </View>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} accessibilityLabel="질문할 위키">
           <Chip small label="전체" on={target === ROOT} onPress={() => setTarget(ROOT)} />
           {domains.map((d) => (
@@ -138,16 +201,16 @@ export default function Chat() {
 
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView ref={scroll} contentContainerStyle={st.main} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })} keyboardShouldPersistTaps="handled">
-          {thread.turns.length === 0 && (
+          {conv.turns.length === 0 && (
             <View style={{ paddingVertical: 24, gap: 6, alignItems: 'center' }}>
               <Text style={{ color: t.muted, fontSize: 14 }}>{target === ROOT ? '위키 전체에 물어봐요' : `${target} 위키에 물어봐요`}</Text>
               <Text style={{ color: t.faint, fontSize: 13, lineHeight: 21, textAlign: 'center' }}>예: 내가 RAG에 대해 알아낸 게 뭐였지?</Text>
             </View>
           )}
-          {thread.turns.map((turn) => {
+          {conv.turns.map((turn, index) => {
             const domain = answerDomain(target, turn);
             return (
-              <View key={turn.id} style={{ gap: 20 }}>
+              <View key={turn.key} style={{ gap: 20 }}>
                 <View style={st.mine}>
                   <View style={[st.bubble, { backgroundColor: t.bubble }]}>
                     <Text selectable style={{ color: t.fg, fontSize: 15, lineHeight: 22.5 }}>{turn.question}</Text>
@@ -188,7 +251,7 @@ export default function Chat() {
                   {turn.status === 'done' && turn.answer !== '' && (
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       {domain && (
-                        <ActButton icon="bookmark" label={turn.saved === 'saved' ? '저장됨' : turn.saved === 'saving' ? '저장하는 중' : '답 저장'} on={turn.saved === 'saved'} onPress={() => saveAnswer(target, turn)} />
+                        <ActButton icon="bookmark" label={turn.saved === 'saved' ? '저장됨' : turn.saved === 'saving' ? '저장하는 중' : '답 저장'} on={turn.saved === 'saved'} onPress={() => saveAnswer(target, turn, index)} />
                       )}
                       <ActButton icon="copy" label="복사" onPress={() => void Clipboard.setStringAsync(turn.answer)} />
                     </View>
@@ -232,6 +295,8 @@ export default function Chat() {
 
 const st = StyleSheet.create({
   header: { paddingVertical: 12, paddingHorizontal: 16, gap: 12, borderBottomWidth: 1 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 32 },
+  headerButton: { width: 40, height: 40, marginVertical: -4, alignItems: 'center', justifyContent: 'center' },
   main: { paddingVertical: 20, paddingHorizontal: 16, gap: 20 },
   mine: { alignSelf: 'flex-end', maxWidth: '80%', alignItems: 'flex-end', gap: 6 },
   bubble: { paddingVertical: 10, paddingHorizontal: 14, borderTopLeftRadius: 14, borderTopRightRadius: 14, borderBottomLeftRadius: 14, borderBottomRightRadius: 4 },

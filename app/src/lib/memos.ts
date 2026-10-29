@@ -92,11 +92,11 @@ export function recentTime(d: Date, now: Date): string {
 
 export type DayGroup<T> = { label: string; items: T[] };
 
-/** Items arrive newest first, so groups come out in order without sorting. */
-export function groupByDay<T extends { captured_at: string }>(items: readonly T[], now: Date): DayGroup<T>[] {
+/** Items arrive newest first by `when`, so groups come out in order without sorting. */
+export function groupByDay<T>(items: readonly T[], now: Date, when: (item: T) => string): DayGroup<T>[] {
   const groups: DayGroup<T>[] = [];
   for (const item of items) {
-    const label = dayLabel(new Date(item.captured_at), now);
+    const label = dayLabel(new Date(when(item)), now);
     const last = groups.at(-1);
     if (last && last.label === label) last.items.push(item);
     else groups.push({ label, items: [item] });

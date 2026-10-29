@@ -146,7 +146,7 @@ export default function Activity() {
   }
 
   const rows = useMemo<Row[]>(
-    () => groupByDay(memos, now).flatMap((g) => [{ kind: 'day' as const, label: g.label }, ...g.items.map((memo) => ({ kind: 'memo' as const, memo }))]),
+    () => groupByDay(memos, now, (m) => m.captured_at).flatMap((g) => [{ kind: 'day' as const, label: g.label }, ...g.items.map((memo) => ({ kind: 'memo' as const, memo }))]),
     [memos, now],
   );
 

@@ -112,6 +112,19 @@ const ICONS = {
       <Path d="M15.1 18H3" />
     </>
   ),
+  plus: (
+    <>
+      <Path d="M5 12h14" />
+      <Path d="M12 5v14" />
+    </>
+  ),
+  trash: (
+    <>
+      <Path d="M3 6h18" />
+      <Path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <Path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+    </>
+  ),
 };
 
 export type IconName = keyof typeof ICONS;

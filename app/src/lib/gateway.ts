@@ -2,7 +2,7 @@ import { classify, type Attempt, type HttpOutcome } from './outbox';
 import type { Candidate, Pairing, PairingFailure } from './pairing';
 import { createSseParser } from './sse';
 import type {
-  AnswerRequest, ChatFrame, ChatRequest, HeldResponse, MemoDetailWire, MemoListResponse, ReleaseResponse, RetryRequest, StatusResponse,
+  AnswerRequest, ChatDetailWire, ChatFrame, ChatListResponse, ChatRequest, HeldResponse, MemoDetailWire, MemoListResponse, ReleaseResponse, RetryRequest, StatusResponse,
 } from './wire';
 
 export type Failure =
@@ -26,7 +26,7 @@ export function observeGateway(handlers: { unauthorized: () => void; reachabilit
   onReachability = handlers.reachability;
 }
 
-async function raw(base: { url: string; token: string }, method: 'GET' | 'POST', path: string, body: string | null, timeoutMs: number): Promise<Raw> {
+async function raw(base: { url: string; token: string }, method: 'GET' | 'POST' | 'DELETE', path: string, body: string | null, timeoutMs: number): Promise<Raw> {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), timeoutMs);
   try {
@@ -76,6 +76,8 @@ const parseDetail = (v: unknown) => (isRecord(v) && typeof v.id === 'string' && 
 const parseHeld = (v: unknown) => (isRecord(v) && Array.isArray(v.held) ? (v as HeldResponse) : null);
 const parseRelease = (v: unknown) => (isRecord(v) && v.status === 'released' ? (v as ReleaseResponse) : null);
 const anyRecord = (v: unknown) => (isRecord(v) ? v : null);
+const parseChats = (v: unknown) => (isRecord(v) && Array.isArray(v.chats) ? (v as ChatListResponse) : null);
+const parseChat = (v: unknown) => (isRecord(v) && typeof v.session_id === 'string' && Array.isArray(v.turns) ? (v as ChatDetailWire) : null);
 
 const TIMEOUT = 10_000;
 const enc = encodeURIComponent;
@@ -92,6 +94,10 @@ export const gateway = {
     toResult(await raw(p, 'POST', `/memos/${enc(id)}/move`, JSON.stringify({ domain }), 15 * 60_000), parseRelease),
   retry: async (p: Pairing, req: RetryRequest) => toResult(await raw(p, 'POST', '/jobs/retry', JSON.stringify(req), TIMEOUT), anyRecord),
   answer: async (p: Pairing, req: AnswerRequest) => toResult(await raw(p, 'POST', '/answers', JSON.stringify(req), TIMEOUT), anyRecord),
+  chats: async (p: Pairing, before: string | null, limit = 30) =>
+    toResult(await raw(p, 'GET', `/chats?limit=${limit}${before ? `&before=${enc(before)}` : ''}`, null, TIMEOUT), parseChats),
+  chatDetail: async (p: Pairing, id: string) => toResult(await raw(p, 'GET', `/chats/${enc(id)}`, null, TIMEOUT), parseChat),
+  deleteChat: async (p: Pairing, id: string) => toResult(await raw(p, 'DELETE', `/chats/${enc(id)}`, null, TIMEOUT), () => true),
 
   async postMemo(p: Pairing, body: string): Promise<Attempt> {
     const r = await raw(p, 'POST', '/memos', body, 15_000);
