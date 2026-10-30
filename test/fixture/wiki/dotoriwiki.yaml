@@ -1,0 +1,41 @@
+# This wiki's settings, read by the gateway on every request. Machine settings stay in the env file.
+
+version: 1
+locale: ko
+time_zone: Asia/Seoul
+fallback_domain: 일상
+domains:
+  일상:
+    description: 내 삶의 기록
+    page_types:
+      me:
+        description: 나의 경향
+        example: ME.md
+      theme:
+        description: 반복해서 나오는 생각
+        example: 주제/일과 쉼.md
+  스터디:
+    description: 내가 직접 겪고 배운 것
+    agents_may_read: true
+    page_types:
+      concept:
+        description: 개념 하나. 내가 이해한 것, 직접 해본 결과, 헷갈렸던 점
+        example: RAG.md
+      case:
+        description: 상황, 시도, 결과, 교훈
+        example: 케이스/회의 안건을 질문으로 쓰기.md
+      project:
+        description: 프로젝트 하나. 목표, 결정 기록, 배운 것
+        example: 프로젝트/llmwiki.md
+      insight:
+        description: 페이지로 키우기엔 짧은 깨달음을 연도별로 모음
+        example: 인사이트/2026.md
+  미루기 아카이빙:
+    description: 나중에 할 것
+    page_types:
+      item:
+        description: 할 일 하나
+        example: 항목/LLM 에이전트 설계 강의.md
+      idea:
+        description: 아직 할 일이 아닌 생각. 관련 메모를 모은다
+        example: 아이디어/가계부 앱.md

@@ -54,6 +54,8 @@ import {
 } from './pages.ts';
 import { isoWithOffset, linksToFetch, renderSourceFile } from './sources.ts';
 
+export type { ConfigParse, ConfigProblem, DomainConfig, FeedName, Locale, MachineFacts, ModelProfile, PageTypeSpec, TimeZone, WikiConfig } from './config.ts';
+export { CONFIG_FILE, CONFIG_VERSION, FEED_NAMES, WikiConfigError, domainIn, parseWikiConfig } from './config.ts';
 export type { Parsed, Problem } from './pages.ts';
 export { pageRefString, parseAnswerId, parseMemo, parseMemoId } from './pages.ts';
 export type { SourceEntry, SourceFile } from './sources.ts';

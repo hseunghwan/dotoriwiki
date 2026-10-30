@@ -91,7 +91,7 @@ export const MEMO_SOURCES = ['typed', 'share', 'selection', 'voice', 'chat', 'fe
 const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-function validTz(tz: string): boolean {
+export function validTz(tz: string): boolean {
   try {
     new Intl.DateTimeFormat('en', { timeZone: tz });
     return true;

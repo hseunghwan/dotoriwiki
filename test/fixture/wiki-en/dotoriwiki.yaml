@@ -1,0 +1,59 @@
+# This wiki's settings. The gateway reads this file on every request, so a saved change
+# applies without a restart. A mistake pauses routing and ingest until it is fixed; memos
+# sent in the meantime wait in inbox/, and GET /status names each key to fix.
+# Settings for the machine the gateway runs on (token, port, programs, models) are not here.
+version: 1
+
+# Language of the server's own prompts and generated pages: en or ko.
+locale: en
+
+# Time zone for the dates the wiki writes: ledger lines, `updated`, collected memos.
+time_zone: America/Chicago
+
+# Where a memo goes when the classifier cannot pick a domain. It waits there for you to confirm.
+fallback_domain: journal
+
+# One entry per domain. The key is the folder name, and that folder's CLAUDE.md tells the
+# model what the domain is for. `description` is what the classifier routes by.
+# `agents_may_read: true` marks a domain coding agents may read.
+# `model_profile: <name>` edits the domain with models.json's `edit.<name>` instead of `edit.default`.
+domains:
+  journal:
+    description: My days, the people in them, and what I make of it all
+    page_types:
+      me:
+        description: How I tend to think and act. Exactly one page
+        example: Me.md
+      person:
+        description: One person. What they like, what we did, what they told me
+        example: people/Sam.md
+      theme:
+        description: A thought or worry that keeps coming back
+        example: themes/Work and rest.md
+  learning:
+    description: What I learned by doing it myself, at work or on my own
+    agents_may_read: true
+    page_types:
+      concept:
+        description: One idea. What I understood, what I tried, what confused me
+        example: RAG.md
+      case:
+        description: A situation, what I tried, how it went, the lesson
+        example: cases/Writing agenda items as questions.md
+      project:
+        description: One project. Goal, decisions and why, what I learned
+        example: projects/dotoriwiki.md
+  someday:
+    description: Things to watch, read, or try later, and ideas not yet started
+    page_types:
+      item:
+        description: One thing to do later
+        example: items/LLM agents lecture.md
+      idea:
+        description: A thought that is not a task yet. Related memos gather here
+        example: ideas/Budget app.md
+
+# News collected as memos into a domain every three hours. A feed not listed is off.
+# feeds:
+#   hackernews: { domain: learning }
+#   ghsa: { domain: learning }
