@@ -30,4 +30,4 @@ P1 and P2 fix the on-disk format other people's wikis will depend on, so they ge
 
 ## Source
 
-Imported from the author's private `llmwiki-app` at `166f90e`. Changes made there after that commit are ported by hand until P8 joins the two.
+Imported from the author's private `llmwiki-app` at `166f90e`. Changes made there are ported by hand until P8 joins the two. Ported through `5d47cf7`.
