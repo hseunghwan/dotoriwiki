@@ -1,9 +1,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { attemptsNote, failureSentence } from '../../lib/failure';
 import { gateway } from '../../lib/gateway';
 import { clock12, monthDay, withIGa, withRo } from '../../lib/memos';
+import type { Pairing } from '../../lib/pairing';
 import type { MemoDetailWire, MemoSourceWire } from '../../lib/wire';
 import { useMove } from '../../moves';
 import { useApp } from '../../state';
@@ -83,6 +84,30 @@ function Timeline({ steps }: { steps: Step[] }) {
 const nodeStyle = (t: Theme, n: Node) =>
   ({ done: { backgroundColor: t.okFg, borderColor: t.okFg }, now: { backgroundColor: t.bg, borderColor: t.onFg }, bad: { backgroundColor: t.bad, borderColor: t.bad } })[n];
 
+type Attachment = MemoDetailWire['attachments'][number];
+
+/** The gateway's 2048 px copy, at its own aspect once loaded. Captioned with when, where and on what. */
+function Photo({ pairing, photo }: { pairing: Pairing; photo: Attachment }) {
+  const t = useTheme();
+  const [ratio, setRatio] = useState(4 / 3);
+  const taken = photo.taken_at ? new Date(photo.taken_at) : null;
+  const caption = [taken && `${monthDay(taken)} ${clock12(taken)}`, photo.place, photo.device].filter(Boolean).join(' · ');
+  return (
+    <View style={{ gap: 6 }}>
+      <Image
+        source={gateway.attachmentSource(pairing, photo.file)}
+        onLoad={(e) => {
+          const { width, height } = e.nativeEvent.source;
+          if (width > 0 && height > 0) setRatio(width / height);
+        }}
+        style={{ width: '100%', aspectRatio: ratio, borderRadius: 10, backgroundColor: t.bg3 }}
+        accessibilityLabel={caption || '사진'}
+      />
+      {caption ? <Text style={{ color: t.faint, fontSize: 12 }}>{caption}</Text> : null}
+    </View>
+  );
+}
+
 function FailureNotice({ memo, onRetried }: { memo: MemoDetailWire; onRetried: () => void }) {
   const t = useTheme();
   const pairing = useApp((a) => a.pairing);
@@ -158,13 +183,21 @@ export default function MemoDetail() {
       <Header title="메모" back />
       <ScrollView contentContainerStyle={st.main}>
         <View style={{ gap: 12 }}>
-          <Text selectable style={{ color: t.fg, fontSize: 17, lineHeight: 27 }}>{memo.text}</Text>
+          {memo.text ? <Text selectable style={{ color: t.fg, fontSize: 17, lineHeight: 27 }}>{memo.text}</Text> : null}
           <View style={st.metaRow}>
             <Text style={st.meta(t)}>{`${monthDay(captured)} ${clock12(captured)}`}</Text>
             {memo.place && <Text style={st.meta(t)}>{memo.place}</Text>}
             <Text style={st.meta(t)}>{SOURCE[memo.source]}</Text>
           </View>
         </View>
+
+        {pairing && (memo.attachments ?? []).length > 0 && (
+          <View style={{ gap: 16 }}>
+            {memo.attachments.map((a) => (
+              <Photo key={a.file} pairing={pairing} photo={a} />
+            ))}
+          </View>
+        )}
 
         <View style={{ gap: 12 }}>
           <SectionTitle>진행</SectionTitle>

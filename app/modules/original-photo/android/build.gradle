@@ -1,0 +1,19 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.cycle.llmwiki'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.originalphoto"
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+}
+
+dependencies {
+  api "androidx.exifinterface:exifinterface:1.4.1"
+}

@@ -29,6 +29,7 @@ it('builds the MemoRequest once with the phone offset and time zone', () => {
     source: 'typed',
     domainHint: '스터디',
     location: { lat: 37.54, lon: 127.05, place: '성동구 성수동2가', address: '서울특별시 성동구 성수동2가 273-5' },
+    attachments: [],
   });
   expect(req).toEqual({
     id: '0d4e8c3a-1b2c-4d5e-8f90-123456789abc',
@@ -39,4 +40,13 @@ it('builds the MemoRequest once with the phone offset and time zone', () => {
     source: 'typed',
     domain_hint: '스터디',
   });
+});
+
+it('adds attachments only when the memo has photos, and lets the text be empty', () => {
+  const req = buildMemoRequest({
+    id: 'x', text: '', at, source: 'typed', domainHint: null, location: null,
+    attachments: [{ n: 1, origin: 'gallery', place: '종로구 사직동', address: '서울특별시 종로구 사직동 1' }],
+  });
+  expect(req.text).toBe('');
+  expect(req.attachments).toEqual([{ n: 1, origin: 'gallery', place: '종로구 사직동', address: '서울특별시 종로구 사직동 1' }]);
 });

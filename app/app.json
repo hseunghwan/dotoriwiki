@@ -45,7 +45,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "맥미니에 띄운 연결용 QR을 읽을 때만 카메라를 써요.",
+          "cameraPermission": "맥미니에 띄운 연결용 QR을 읽고, 메모에 붙일 사진을 찍을 때 카메라를 써요.",
           "recordAudioAndroid": false,
           "microphonePermission": false,
           "barcodeScannerEnabled": true
@@ -55,6 +55,23 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "메모를 쓰는 순간의 위치를 메모에 붙여요."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "메모에 붙일 사진을 고를 때 사진을 봐요. 찍은 장소도 함께 읽어요.",
+          "savePhotosPermission": false,
+          "isAccessMediaLocationEnabled": true,
+          "granularPermissions": ["photo"]
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "맥미니에 띄운 연결용 QR을 읽고, 메모에 붙일 사진을 찍을 때 카메라를 써요.",
+          "photosPermission": false,
+          "microphonePermission": false
         }
       ],
       "expo-secure-store",

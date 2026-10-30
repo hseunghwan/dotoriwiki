@@ -27,6 +27,12 @@ export function addressOf(p: Geocoded): string | null {
   return p.name && !full.includes(p.name) ? `${full} (${p.name})` : full;
 }
 
+/** A photo's own GPS fix as place and address. Null on any failure: the gateway still has the coordinates. */
+export async function geocode(lat: number, lon: number): Promise<{ place: string | null; address: string | null } | null> {
+  const p = (await within(3_000, Location.reverseGeocodeAsync({ latitude: lat, longitude: lon })))?.[0];
+  return p ? { place: placeOf(p), address: addressOf(p) } : null;
+}
+
 /** Last known position first, then a fresh fix if one arrives within ~3 s. Null without permission. */
 export async function locate(): Promise<GeoFix | null> {
   const perm = await Location.getForegroundPermissionsAsync().catch(() => null);

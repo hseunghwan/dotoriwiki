@@ -2,7 +2,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { outbox } from '../lib/db';
-import type { OutboxRow } from '../lib/outbox';
+import type { OutboxFile, OutboxRow } from '../lib/outbox';
 
 export function useOutbox(): OutboxRow[] {
   const [rows, setRows] = useState<OutboxRow[]>([]);
@@ -17,6 +17,22 @@ export function useOutbox(): OutboxRow[] {
     };
   }, []);
   return rows;
+}
+
+/** The outbox's photo files, refreshed with the rows. */
+export function useOutboxFiles(): OutboxFile[] {
+  const [files, setFiles] = useState<OutboxFile[]>([]);
+  useEffect(() => {
+    let live = true;
+    const load = () => void outbox.allFiles().then((f) => live && setFiles(f));
+    load();
+    const off = outbox.subscribe(load);
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
+  return files;
 }
 
 export function useNow(everyMs = 30_000): Date {

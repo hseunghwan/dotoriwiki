@@ -9,6 +9,7 @@ import { refreshStatus, useApp } from '../../state';
 import { useFocusPoll, useNow } from '../../ui/hooks';
 import { Icon } from '../../ui/icon';
 import { Card, FailureLine, Header, s as ui, Screen, SectionTitle, SmallButton } from '../../ui/parts';
+import { PhotoCount } from '../../ui/photos';
 import { useTheme } from '../../ui/theme';
 
 type Row = { kind: 'day'; label: string } | { kind: 'memo'; memo: MemoListItemWire };
@@ -100,6 +101,7 @@ function Entry({ memo }: { memo: MemoListItemWire }) {
           <Text style={{ color: t.faint, fontSize: 13 }}>·</Text>
           <Text style={{ color: memo.state === 'failed' ? t.bad : t.fg, fontSize: 13 }}>{what}</Text>
           {memo.first_page && <Text style={{ color: t.link, fontSize: 13 }}>{memo.first_page}</Text>}
+          <PhotoCount count={memo.photos} />
         </View>
         <Text numberOfLines={1} style={{ color: t.faint, fontSize: 13, lineHeight: 19 }}>{memo.text.replace(/\s+/g, ' ')}</Text>
       </View>

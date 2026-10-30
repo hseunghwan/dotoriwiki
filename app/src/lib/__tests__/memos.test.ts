@@ -6,7 +6,7 @@ const outboxRow = (id: string, captured_at: string, state: OutboxRow['state'] = 
   id, body: JSON.stringify({ id, text: `memo ${id}`, captured_at, tz: 'Asia/Seoul', source: 'typed' }), created_at: captured_at, attempts: 0, state, last_error: null,
 });
 const serverItem = (id: string, captured_at: string, state: MemoListItemWire['state']): MemoListItemWire => ({
-  id, text: `memo ${id}`, captured_at, tz: 'Asia/Seoul', source: 'typed', domain: '스터디', state, verdict: null, first_page: null, finished_at: null,
+  id, text: `memo ${id}`, captured_at, tz: 'Asia/Seoul', source: 'typed', domain: '스터디', state, verdict: null, first_page: null, finished_at: null, photos: 0,
 });
 
 it('merges the outbox with the gateway list, newest first, and lets the gateway copy win', () => {
@@ -15,6 +15,17 @@ it('merges the outbox with the gateway list, newest first, and lets the gateway 
     [serverItem('a', '2026-10-29T15:00:00+09:00', 'routed'), serverItem('c', '2026-10-29T14:30:00+09:00', 'ingested')],
   );
   expect(merged.map((m) => [m.id, m.stage])).toEqual([['a', 'routed'], ['c', 'ingested'], ['b', 'dead']]);
+});
+
+it('counts photos from the frozen body or the gateway, with local thumbnails only for unsent rows', () => {
+  const body = JSON.stringify({ id: 'a', text: '', captured_at: '2026-10-29T15:00:00+09:00', tz: 'Asia/Seoul', source: 'typed', attachments: [{ n: 1, origin: 'gallery' }, { n: 2, origin: 'camera' }] });
+  const a: OutboxRow = { ...outboxRow('a', '2026-10-29T15:00:00+09:00'), body };
+  const files = [
+    { memo_id: 'a', n: 1, path: 'file:///o/a-1.jpg', uploaded: 1 },
+    { memo_id: 'a', n: 2, path: 'file:///o/a-2.jpg', uploaded: 0 },
+  ];
+  expect(mergeRecent([a], [], files).map((m) => [m.photos, m.local])).toEqual([[2, ['file:///o/a-1.jpg', 'file:///o/a-2.jpg']]]);
+  expect(mergeRecent([a], [{ ...serverItem('a', '2026-10-29T15:00:00+09:00', 'inbox'), photos: 2 }], files).map((m) => [m.photos, m.local])).toEqual([[2, []]]);
 });
 
 it('counts the 기록 header from /status', () => {

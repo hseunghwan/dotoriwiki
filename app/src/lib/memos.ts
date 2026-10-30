@@ -1,4 +1,5 @@
-import type { OutboxRow } from './outbox';
+import type { OutboxFile, OutboxRow } from './outbox';
+import { photoCount } from './photos';
 import type { MemoListItemWire, MemoRequest, MemoStateWire, StatusResponse } from './wire';
 
 export type Tone = 'wait' | 'route' | 'done' | 'warn' | 'bad';
@@ -25,26 +26,29 @@ export type RecentMemo = {
   domain: string | null;
   first_page: string | null;
   verdict: string | null;
+  photos: number;
+  /** file:// copies of a row still in the outbox, for its thumbnails. Empty once the gateway has it. */
+  local: string[];
 };
 
-function fromOutbox(row: OutboxRow): RecentMemo | null {
+function fromOutbox(row: OutboxRow, local: string[]): RecentMemo | null {
   try {
     const m = JSON.parse(row.body) as MemoRequest;
-    return { id: row.id, text: m.text, captured_at: m.captured_at, stage: row.state, domain: null, first_page: null, verdict: null };
+    return { id: row.id, text: m.text, captured_at: m.captured_at, stage: row.state, domain: null, first_page: null, verdict: null, photos: photoCount(m), local };
   } catch {
     return null;
   }
 }
 
 const fromServer = (m: MemoListItemWire): RecentMemo => ({
-  id: m.id, text: m.text, captured_at: m.captured_at, stage: m.state, domain: m.domain, first_page: m.first_page, verdict: m.verdict,
+  id: m.id, text: m.text, captured_at: m.captured_at, stage: m.state, domain: m.domain, first_page: m.first_page, verdict: m.verdict, photos: m.photos ?? 0, local: [],
 });
 
 /** Outbox rows and GET /memos, deduped by id. The gateway's copy wins: it knows more than "not sent yet". */
-export function mergeRecent(outbox: readonly OutboxRow[], server: readonly MemoListItemWire[]): RecentMemo[] {
+export function mergeRecent(outbox: readonly OutboxRow[], server: readonly MemoListItemWire[], files: readonly OutboxFile[] = []): RecentMemo[] {
   const byId = new Map<string, RecentMemo>();
   for (const row of outbox) {
-    const r = fromOutbox(row);
+    const r = fromOutbox(row, files.filter((f) => f.memo_id === row.id).map((f) => f.path));
     if (r) byId.set(r.id, r);
   }
   for (const m of server) byId.set(m.id, fromServer(m));

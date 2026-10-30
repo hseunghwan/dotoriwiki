@@ -44,3 +44,6 @@ example
 
 # release signing, never committed
 /keystore/
+
+# local Expo modules
+modules/*/android/build/

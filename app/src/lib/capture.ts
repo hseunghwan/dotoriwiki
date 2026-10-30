@@ -1,4 +1,4 @@
-import type { MemoRequest, MemoSourceWire } from './wire';
+import type { MemoAttachmentWire, MemoRequest, MemoSourceWire } from './wire';
 
 const pad = (n: number) => String(Math.trunc(Math.abs(n))).padStart(2, '0');
 
@@ -29,6 +29,7 @@ export type CaptureInput = {
   source: MemoSourceWire;
   domainHint: string | null;
   location: GeoFix | null;
+  attachments: MemoAttachmentWire[];
 };
 
 /** Built once and frozen into the outbox; resending the same JSON is what makes the POST idempotent. */
@@ -41,5 +42,6 @@ export function buildMemoRequest(input: CaptureInput): MemoRequest {
     location: input.location,
     source: input.source,
     domain_hint: input.domainHint,
+    ...(input.attachments.length > 0 ? { attachments: input.attachments } : {}),
   };
 }

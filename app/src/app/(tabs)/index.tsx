@@ -5,12 +5,14 @@ import type { GeoFix } from '../../lib/capture';
 import { gateway } from '../../lib/gateway';
 import { locate } from '../../lib/location';
 import { clock12, mergeRecent, recentTime, STAGE, type RecentMemo } from '../../lib/memos';
+import { canSend } from '../../lib/photos';
 import type { MemoListItemWire } from '../../lib/wire';
 import { capture, getApp, useApp } from '../../state';
-import { useFocusPoll, useNow, useOutbox } from '../../ui/hooks';
+import { useFocusPoll, useNow, useOutbox, useOutboxFiles } from '../../ui/hooks';
 import { Icon } from '../../ui/icon';
 import { Header, Pill, PrimaryButton, s as ui, Screen, SectionTitle } from '../../ui/parts';
 import { DomainChips } from '../../ui/domain-chips';
+import { LocalThumbs, PhotoButtons, PhotoCount, PhotoStrip, usePhotoDraft } from '../../ui/photos';
 import { useTheme } from '../../ui/theme';
 
 const SETTLED = new Set(['ingested', 'failed', 'dead', 'held']);
@@ -70,12 +72,16 @@ function RecentRow({ memo, now }: { memo: RecentMemo; now: Date }) {
       onPress={() => (unsent ? router.push('/settings') : router.push({ pathname: '/memo/[id]', params: { id: memo.id } }))}
       style={[st.item, { borderBottomColor: t.line }]}
     >
-      <Text numberOfLines={2} style={{ color: t.fg, fontSize: 14, lineHeight: 21 }}>
-        {memo.text}
-      </Text>
+      {memo.text ? (
+        <Text numberOfLines={2} style={{ color: t.fg, fontSize: 14, lineHeight: 21 }}>
+          {memo.text}
+        </Text>
+      ) : null}
+      {unsent && <LocalThumbs uris={memo.local} />}
       <View style={st.meta}>
         <Text style={{ color: t.faint, fontSize: 12 }}>{recentTime(new Date(memo.captured_at), now)}</Text>
         <Pill label={stage.label} tone={stage.tone} />
+        <PhotoCount count={memo.photos} />
         {memo.stage === 'ingested' && memo.first_page ? (
           <View style={st.page}>
             <Icon name="file" size={12} color={t.link} />
@@ -98,10 +104,12 @@ export default function MemoTab() {
   const [fix, refreshFix] = useCompositionFix();
   const [server, setServer] = useState<MemoListItemWire[]>([]);
   const rows = useOutbox();
+  const files = useOutboxFiles();
+  const draft = usePhotoDraft();
   const now = useNow();
   const pairing = useApp((a) => a.pairing);
 
-  const recent = useMemo(() => mergeRecent(rows, server.filter((m) => m.source !== 'feed')).slice(0, 10), [rows, server]);
+  const recent = useMemo(() => mergeRecent(rows, server.filter((m) => m.source !== 'feed'), files).slice(0, 10), [rows, server, files]);
   const moving = recent.some((m) => !SETTLED.has(m.stage));
   const waiting = rows.filter((r) => r.state === 'queued').length;
 
@@ -126,13 +134,16 @@ export default function MemoTab() {
 
   async function send() {
     const body = text.trim();
-    if (!body) return;
+    const photos = draft.photos;
+    if (!canSend(body, photos)) return;
     setText('');
+    draft.clear();
     const { sent } = await capture({
       text: body,
       source: 'typed',
       domainHint: hint,
       location: attach && fix.kind === 'found' ? fix.fix : null,
+      photos,
     });
     setAttach(true);
     await sent;
@@ -167,6 +178,7 @@ export default function MemoTab() {
               style={[st.textarea, { color: t.fg }]}
               textAlignVertical="top"
             />
+            <PhotoStrip draft={draft} />
             <View style={st.composeMeta}>
               <View style={st.inline4}>
                 <Icon name="clock" size={14} color={t.faint} />
@@ -194,6 +206,7 @@ export default function MemoTab() {
                     <Text style={{ color: t.faint, fontSize: 12 }}>위치 붙이기</Text>
                   </Pressable>
                 ))}
+              <PhotoButtons draft={draft} />
             </View>
           </View>
 
@@ -202,7 +215,7 @@ export default function MemoTab() {
             <DomainChips value={hint} onChange={setHint} />
           </View>
 
-          <PrimaryButton label="보내기" icon="send" disabled={text.trim() === ''} onPress={send} />
+          <PrimaryButton label="보내기" icon="send" disabled={!canSend(text, draft.photos) || draft.busy} onPress={send} />
 
           <View style={{ gap: 4 }}>
             <SectionTitle style={{ marginBottom: 4 }}>방금 보낸 메모</SectionTitle>
@@ -219,6 +232,7 @@ export default function MemoTab() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      {draft.sheet}
     </Screen>
   );
 }

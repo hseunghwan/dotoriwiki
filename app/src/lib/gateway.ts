@@ -1,4 +1,5 @@
-import { classify, type Attempt, type HttpOutcome } from './outbox';
+import { File, UploadType } from 'expo-file-system';
+import { classify, type Attempt, type HttpOutcome, type OutboxFile } from './outbox';
 import type { Candidate, Pairing, PairingFailure } from './pairing';
 import { createSseParser } from './sse';
 import type {
@@ -105,6 +106,33 @@ export const gateway = {
     const outcome: HttpOutcome = 'network' in r ? r : { status: r.status, detail: isRecord(r.json) && typeof r.json.detail === 'string' ? r.json.detail : null };
     return classify(outcome);
   },
+
+  /**
+   * PUT /attachments/:id/:n. expo-file-system streams the file from disk through OkHttp, so a 10 MB
+   * photo never passes through JS as base64. Its timeouts are 60 s per read or write, not per upload.
+   */
+  async putAttachment(p: Pairing, file: OutboxFile): Promise<Attempt> {
+    let r: Raw;
+    try {
+      const res = await new File(file.path).upload(`${p.url}/attachments/${enc(file.memo_id)}/${file.n}`, {
+        httpMethod: 'PUT',
+        uploadType: UploadType.BINARY_CONTENT,
+        headers: { authorization: `Bearer ${p.token}`, 'content-type': 'application/octet-stream' },
+      });
+      let json: unknown = null;
+      try {
+        json = res.body ? JSON.parse(res.body) : null;
+      } catch {}
+      r = { status: res.status, json };
+    } catch (e) {
+      r = { network: (e as Error).message };
+    }
+    report(r);
+    return classify('network' in r ? r : { status: r.status, detail: isRecord(r.json) && typeof r.json.detail === 'string' ? r.json.detail : null });
+  },
+
+  /** GET /attachments/:file, the 2048 px JPEG, as an Image source. */
+  attachmentSource: (p: Pairing, file: string) => ({ uri: `${p.url}/attachments/${enc(file)}`, headers: { authorization: `Bearer ${p.token}` } }),
 
   /** Pairing check: GET /status with the offered url and token, sorted into the failures the first-run screen tells apart. */
   async check(c: Candidate): Promise<{ ok: true; pairing: Pairing; status: StatusResponse } | { ok: false; failure: PairingFailure }> {

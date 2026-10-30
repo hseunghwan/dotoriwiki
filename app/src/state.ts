@@ -5,10 +5,12 @@ import { useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { buildMemoRequest, type CaptureInput } from './lib/capture';
 import { kv, outbox } from './lib/db';
+import { adopt, sweepPending } from './lib/files';
 import { createFlusher } from './lib/flusher';
 import { gateway, observeGateway } from './lib/gateway';
 import { flushOnce } from './lib/outbox';
 import { parseStoredPairing, type Pairing } from './lib/pairing';
+import { attachmentsOf, type DraftPhoto } from './lib/photos';
 import type { StatusResponse } from './lib/wire';
 
 export type ThemePref = 'system' | 'dark' | 'light';
@@ -47,7 +49,11 @@ const flusher = createFlusher({
   pass: async () => {
     const p = app.pairing;
     if (!p || app.authLost) return { kind: 'paused' };
-    return flushOnce(outbox.store, (row) => gateway.postMemo(p, row.body));
+    return flushOnce(
+      outbox.store,
+      (row) => gateway.postMemo(p, row.body),
+      (_row, file) => gateway.putAttachment(p, file),
+    );
   },
   setTimer: (ms, fire) => {
     const t = setTimeout(fire, ms);
@@ -59,10 +65,14 @@ const flusher = createFlusher({
 export const flushNow = (): Promise<void> => flusher.trigger();
 
 /** Saves the memo to the outbox first; the returned promise is only the send attempt. */
-export async function capture(input: Omit<CaptureInput, 'id' | 'at'>): Promise<{ id: string; sent: Promise<void> }> {
+export async function capture(input: Omit<CaptureInput, 'id' | 'at' | 'attachments'> & { photos?: readonly DraftPhoto[] }): Promise<{ id: string; sent: Promise<void> }> {
   const id = Crypto.randomUUID();
   const at = new Date();
-  await outbox.enqueue(id, JSON.stringify(buildMemoRequest({ ...input, id, at })), at.toISOString());
+  const { photos = [], ...rest } = input;
+  const files: { n: number; path: string }[] = [];
+  for (const [i, photo] of photos.entries()) files.push({ n: i + 1, path: await adopt(photo.uri, id, i + 1) });
+  const body = buildMemoRequest({ ...rest, id, at, attachments: attachmentsOf(photos) });
+  await outbox.enqueue(id, JSON.stringify(body), at.toISOString(), files);
   return { id, sent: flusher.trigger() };
 }
 
@@ -131,6 +141,7 @@ export function boot(): Promise<void> {
       kv.get('settings').then(parseSettings),
     ]);
     set({ ready: true, pairing, domains, settings });
+    sweepPending();
 
     AppState.addEventListener('change', (s) => flusher.setForeground(s === 'active'));
     Network.addNetworkStateListener((e) => {
