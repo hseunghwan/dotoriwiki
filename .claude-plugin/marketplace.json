@@ -1,0 +1,7 @@
+{
+  "name": "llmwiki",
+  "owner": { "name": "hseunghwan" },
+  "plugins": [
+    { "name": "llmwiki", "source": "./plugin", "description": "/memo and the LLM wiki gateway MCP server." }
+  ]
+}

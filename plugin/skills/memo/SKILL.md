@@ -1,9 +1,9 @@
 ---
 name: memo
-description: Save a memo to the LLM wiki with where you are working attached, like a memo typed on the phone. Runs only when the user types /memo.
+description: Save a memo to the LLM wiki with where you are working attached, like a memo typed on the phone. Runs only when the user invokes it.
 disable-model-invocation: true
 argument-hint: "[메모 내용]"
-allowed-tools: mcp__llmwiki__write_memo, mcp__llmwiki__memo_status, Bash(git branch --show-current)
+allowed-tools: mcp__plugin_llmwiki_llmwiki__write_memo, mcp__plugin_llmwiki_llmwiki__memo_status, Bash(git branch --show-current)
 ---
 
 # /memo
@@ -34,8 +34,4 @@ Draft a short memo, one to three lines in Korean, of what the user learned or de
 
 ## Not connected
 
-If the `write_memo` tool is missing, reply in one line that the llmwiki MCP server is not connected, and give the command:
-
-```
-claude mcp add --scope user --transport http llmwiki http://<gateway-tailnet-address>:8787/mcp --header "Authorization: Bearer <GATEWAY_TOKEN>"
-```
+If the `write_memo` tool is missing, reply in one line that the llmwiki MCP server is not connected: Tailscale must be on, and the token is set with `claude plugin configure llmwiki@llmwiki`.

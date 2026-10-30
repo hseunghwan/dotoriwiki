@@ -1,0 +1,25 @@
+{
+  "name": "llmwiki",
+  "version": "0.1.0",
+  "description": "Save memos to the personal LLM wiki from any machine on the tailnet: the /memo skill plus the gateway's MCP server.",
+  "userConfig": {
+    "url": {
+      "type": "string",
+      "title": "Gateway URL",
+      "description": "The gateway on the tailnet, without /mcp, such as http://my-mac.tail-1234.ts.net:8787."
+    },
+    "token": {
+      "type": "string",
+      "title": "Gateway token",
+      "description": "GATEWAY_TOKEN. On the gateway machine: npm run pair -- --show-token",
+      "sensitive": true
+    }
+  },
+  "mcpServers": {
+    "llmwiki": {
+      "type": "http",
+      "url": "${user_config.url}/mcp",
+      "headers": { "Authorization": "Bearer ${user_config.token}" }
+    }
+  }
+}
