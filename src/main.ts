@@ -14,8 +14,9 @@
  *      ├────→ codex.ts ──→ cli-run.ts, models.ts, wiki/index.ts (types only)
  *      └────→ enrich.ts ─→ wiki/index.ts (types only: implements FetchSource)
  *
- *   wiki/index.ts ─→ wiki/ledger.ts   log.md line format → JobHistory     (pure)
- *                 ─→ wiki/pages.ts    file formats, schema tables, checks, index (pure)
+ *   wiki/index.ts ─→ wiki/config.ts   dotoriwiki.yaml → WikiConfig, prompt catalogs (pure)
+ *                 ─→ wiki/ledger.ts   log.md line format → JobHistory     (pure)
+ *                 ─→ wiki/pages.ts    file formats, page fields, checks, index (pure)
  *                 ─→ wiki/sources.ts  raw/<id>.source.md format, which links get fetched (pure)
  *                 ─→ wiki/layout.ts   paths, atomic writes, marker, lock, prompt composition
  *                 ─→ wiki/git.ts      execFile git behind one mutex
@@ -36,8 +37,8 @@ import { execRun, sourceFetcher } from './enrich.ts';
 import { FEEDS, pollFeeds } from './feeds.ts';
 import { startHttp } from './http.ts';
 import { startLoops } from './loops.ts';
-import { loadModels, routeLlm } from './models.ts';
-import { listDomains, openWiki } from './wiki/index.ts';
+import { loadModels, profileNames, routeLlm } from './models.ts';
+import { openWiki } from './wiki/index.ts';
 
 export type Config = {
   readonly wikiRoot: string;
@@ -78,7 +79,7 @@ const log = (where: string, data: object) => console.error(JSON.stringify({ t: n
 
 async function main(): Promise<void> {
   const cfg = loadConfig(process.env);
-  const models = loadModels(cfg.modelsFile, await listDomains(cfg.wikiRoot));
+  const models = loadModels(cfg.modelsFile);
   const claude = claudeCli({ bin: cfg.claudeBin, chat: models.chat });
   const codex = codexCli({ bin: cfg.codexBin });
   const llm = routeLlm(models, (c) => (c.provider === 'claude' ? claude.llm(c) : codex.llm(c)));
@@ -87,21 +88,25 @@ async function main(): Promise<void> {
     fetchSource: sourceFetcher({ http: fetch, run: execRun, ytDlp: cfg.ytDlpBin }),
     maxAttempts: 3,
     reviewBelowConfidence: 0.6,
-    fallbackDomain: '일상',
     ingestTimeoutMs: 10 * 60_000,
     committer: { name: 'llmwiki-gateway', email: 'gateway@localhost' },
+    modelProfiles: profileNames(models),
   });
   const loops = startLoops(wiki, {
     rescanMs: 30_000,
     backoffMs: 30_000,
-    collector: !cfg.collectFeeds ? null : { poll: () => pollFeeds(FEEDS, { http: fetch, accept: (m) => wiki.accept(m), now: () => new Date() }), firstMs: 60_000, everyMs: 3 * 3_600_000 },
+    collector: !cfg.collectFeeds ? null : { poll: async () => pollFeeds(FEEDS, await wiki.config(), { http: fetch, accept: (m) => wiki.accept(m), now: () => new Date() }), firstMs: 60_000, everyMs: 3 * 3_600_000 },
     onReport: (where, r) => log(where, r),
   });
   const http = await startHttp(
     { wiki, chat: (turn, signal) => chatTurn({ wiki, claude }, turn, signal), token: cfg.token, serverVersion: serverVersion(), now: () => new Date(), maxBodyBytes: 256 * 1024 },
     { host: cfg.host, port: cfg.port },
   );
-  log('main', { listening: `http://${cfg.host}:${http.port}`, wikiRoot: cfg.wikiRoot, models: { ...models, edit: { default: models.edit.default, ...Object.fromEntries(models.edit.byDomain) } } });
+  const { paused, problems } = await wiki.status();
+  log('main', {
+    listening: `http://${cfg.host}:${http.port}`, wikiRoot: cfg.wikiRoot, config: { state: paused ? 'paused' : 'ok', problems },
+    models: { ...models, edit: { default: models.edit.default, ...Object.fromEntries(models.edit.profiles) } },
+  });
 
   let stopping = false;
   const shutdown = async (sig: string) => {

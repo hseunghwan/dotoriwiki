@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FEEDS, feedMemoId, pollFeeds, recent, type Feed } from '../src/feeds.ts';
+import { FEEDS, feedMemoId, pollFeeds, recent, type FeedPlan } from '../src/feeds.ts';
 import { parseMemoFile } from '../src/wiki/pages.ts';
-import { parseMemoId, type Memo } from '../src/wiki/index.ts';
-import { fakeLlm, listDir, open, readText, tempWiki } from './helpers.ts';
+import { FEED_NAMES, parseMemoId, type DomainName, type Memo, type TimeZone } from '../src/wiki/index.ts';
+import { editConfig, fakeLlm, listDir, open, readText, tempWiki } from './helpers.ts';
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), 'fixture', 'feeds');
 const fixture = (name: string) => readFileSync(join(FIX, name), 'utf8');
@@ -31,6 +31,8 @@ function feedHttp(over: (url: string) => Response | null = () => null) {
   }) as typeof fetch;
   return { http, calls };
 }
+
+const PLAN: FeedPlan = { timeZone: 'Asia/Seoul' as TimeZone, feeds: new Map(FEED_NAMES.map((n) => [n, { domain: 'news' as DomainName }])) };
 
 function sink() {
   const memos: Memo[] = [];
@@ -99,9 +101,9 @@ test('recent: newest first, inside the window, at most cap', () => {
 test('a poll turns fixture responses into feed memos, capped per feed and windowed', async () => {
   const { http } = feedHttp();
   const out = sink();
-  const reports = await pollFeeds(FEEDS, { http, accept: out.accept, now: () => NOW });
+  const reports = await pollFeeds(FEEDS, PLAN, { http, accept: out.accept, now: () => NOW });
   assert.deepEqual(reports.map((r) => [r.feed, r.kind, r.kind === 'polled' ? r.created : 0]), [['geeknews', 'polled', 15], ['hackernews', 'polled', 10], ['ghsa', 'polled', 15]]);
-  assert.ok(out.memos.every((m) => m.source === 'feed' && m.domainHint === '개발소식지식베이스' && m.tz === 'Asia/Seoul' && m.location === null));
+  assert.ok(out.memos.every((m) => m.source === 'feed' && m.domainHint === 'news' && m.tz === 'Asia/Seoul' && m.location === null));
   assert.ok(out.memos.every((m) => m.capturedAt.endsWith('+09:00')));
 
   const topic = out.memos.find((m) => m.id === feedMemoId('geeknews', '36168'))!;
@@ -123,7 +125,7 @@ test('a failing feed is reported and the others still poll; a topic page that fa
     url.startsWith('https://hn.algolia.com/') ? new Response('down', { status: 503 })
       : url === 'https://news.hada.io/topic?id=36168' ? new Response('', { status: 500 }) : null);
   const out = sink();
-  const reports = await pollFeeds(FEEDS, { http, accept: out.accept, now: () => NOW });
+  const reports = await pollFeeds(FEEDS, PLAN, { http, accept: out.accept, now: () => NOW });
   const hn = reports.find((r) => r.feed === 'hackernews')!;
   assert.equal(hn.kind, 'failed');
   assert.match(hn.kind === 'failed' ? hn.reason : '', /HTTP 503/);
@@ -132,16 +134,30 @@ test('a failing feed is reported and the others still poll; a topic page that fa
   assert.equal(reports.find((r) => r.feed === 'ghsa')!.kind, 'polled');
 });
 
+test('only the feeds the wiki names are polled, into their domain and stamped in the wiki time zone', async () => {
+  const root = await tempWiki('en');
+  await editConfig(root, (c) => ({ ...c, feeds: { hackernews: { domain: 'learning' } } }));
+  const wiki = await open(root, fakeLlm());
+  const { http, calls } = feedHttp();
+  const out = sink();
+  const reports = await pollFeeds(FEEDS, await wiki.config(), { http, accept: out.accept, now: () => NOW });
+  assert.deepEqual(reports.map((r) => r.feed), ['hackernews']);
+  assert.ok(calls.every((u) => u.startsWith('https://hn.algolia.com/')), 'no other feed is fetched');
+  assert.ok(out.memos.length > 0 && out.memos.every((m) => m.domainHint === 'learning' && m.tz === 'America/Chicago' && /-0[56]:00$/.test(m.capturedAt)));
+  await wiki.close();
+});
+
 test('polling twice into a real Wiki inbox collects each item once', async () => {
   const root = await tempWiki();
   const wiki = await open(root, fakeLlm());
-  const feeds: Record<string, Feed> = { geeknews: { ...FEEDS.geeknews, cap: 3 }, ghsa: { ...FEEDS.ghsa, cap: 2 } };
+  const feeds = { geeknews: { ...FEEDS.geeknews, cap: 3 }, ghsa: { ...FEEDS.ghsa, cap: 2 } };
   const ports = { http: feedHttp().http, accept: (m: Memo) => wiki.accept(m), now: () => NOW };
-  const first = await pollFeeds(feeds, ports);
+  const plan: FeedPlan = { ...(await wiki.config()), feeds: new Map([['geeknews', { domain: '스터디' as DomainName }], ['ghsa', { domain: '스터디' as DomainName }]]) };
+  const first = await pollFeeds(feeds, plan, ports);
   assert.deepEqual(first.map((r) => (r.kind === 'polled' ? [r.created, r.duplicate] : r.kind)), [[3, 0], [2, 0]]);
   const inbox = (await listDir(join(root, 'inbox'))).filter((n) => n.endsWith('.md'));
   assert.equal(inbox.length, 5);
-  const second = await pollFeeds(feeds, { ...ports, now: () => new Date(NOW.getTime() + 3 * 3_600_000) });
+  const second = await pollFeeds(feeds, plan, { ...ports, now: () => new Date(NOW.getTime() + 3 * 3_600_000) });
   assert.deepEqual(second.map((r) => (r.kind === 'polled' ? [r.created, r.duplicate] : r.kind)), [[0, 3], [0, 2]]);
   assert.deepEqual((await listDir(join(root, 'inbox'))).filter((n) => n.endsWith('.md')), inbox);
   const parsed = parseMemoFile((await readText(join(root, 'inbox', inbox[0]!)))!);

@@ -21,30 +21,34 @@ async function routedTo(wiki: Wiki, n: number, d: DomainName, text?: string) {
 
 const problemRules = (r: RunReport) => (r.kind === 'retrying' || r.kind === 'gave-up' ? r.problems.map((p) => p.rule) : []);
 
-test('openWiki commits init(<d>) for each domain and generates an empty index', async () => {
+test('openWiki commits the config and init(<d>) for each domain, and generates an empty index', async () => {
   const root = await tempWiki();
   const wiki = await open(root, fakeLlm());
-  assert.deepEqual(commitSubjects(root).sort(), ['init(미루기 아카이빙)', 'init(스터디)', 'init(일상)']);
+  assert.deepEqual(commitSubjects(root), ['manual(config)', 'init(일상)', 'init(스터디)', 'init(미루기 아카이빙)']);
   assert.equal(headFile(root, '미루기 아카이빙/wiki/log.md'), '# log\n');
   assert.match(headFile(root, '스터디/wiki/index.md')!, /^# 스터디 색인/);
   assert.equal(headFile(root, '스터디/raw/.gitkeep'), '', 'raw/.gitkeep is tracked, so raw/ holds only memos');
   await wiki.close();
   const again = await open(root, fakeLlm());
-  assert.equal(commitSubjects(root).length, 3, 'reopening commits nothing');
+  assert.equal(commitSubjects(root).length, 4, 'reopening commits nothing');
   await again.close();
 });
 
-test('openWiki fails when the root 도메인 목록 table and the domain folders disagree', async () => {
+test('openWiki refuses a root without dotoriwiki.yaml or with a newer version; a folder the file does not name is not a domain', async () => {
+  const missing = await tempWiki();
+  await fs.rm(join(missing, 'dotoriwiki.yaml'));
+  await assert.rejects(open(missing, fakeLlm()), /not a dotoriwiki wiki/);
+
+  const newer = await tempWiki();
+  await fs.writeFile(join(newer, 'dotoriwiki.yaml'), (await fs.readFile(join(newer, 'dotoriwiki.yaml'), 'utf8')).replace('version: 1', 'version: 2'));
+  await assert.rejects(open(newer, fakeLlm()), /version is 2/);
+
   const extra = await tempWiki();
   await fs.mkdir(join(extra, '새 도메인'));
   await fs.writeFile(join(extra, '새 도메인', 'CLAUDE.md'), '# 새 도메인\n');
-  await assert.rejects(open(extra, fakeLlm()), /도메인 목록/, 'a folder missing from the table');
-
-  const missing = await tempWiki();
-  await fs.rm(join(missing, '일상'), { recursive: true });
-  await assert.rejects(open(missing, fakeLlm()), /도메인 목록/, 'a table row without a folder');
-
-  await assert.doesNotReject(open(await tempWiki(), fakeLlm()).then((w) => w.close()), 'matching table opens');
+  const wiki = await open(extra, fakeLlm());
+  assert.deepEqual([...(await wiki.config()).domains.keys()], ['일상', '스터디', '미루기 아카이빙']);
+  await wiki.close();
 });
 
 test('one gateway per root; a lock left by a dead process is taken over', async () => {
@@ -75,7 +79,7 @@ test('routing: hint, classifier, low confidence held, fallback held after two em
   llm.classifyWith = async () => ({ kind: 'classified', domain: '스터디', confidence: 0.3, reason: '애매함' });
   const r2 = await wiki.routeNext();
   assert.deepEqual(r2, { kind: 'held', id: ulid(2), domain: 스터디, routing: { by: 'classifier', confidence: 0.3, reason: '애매함' } });
-  assert.deepEqual(llm.classifyCalls[0]!.domains, ['미루기 아카이빙', '스터디', '일상'], 'the schema enum is the scanned domain list');
+  assert.deepEqual(llm.classifyCalls[0]!.domains, ['일상', '스터디', '미루기 아카이빙'], 'the schema enum is the declared domain list');
 
   await wiki.accept(memo(3));
   llm.classifyWith = async () => ({ kind: 'no-answer', detail: 'no structured_output' });
@@ -223,7 +227,7 @@ test('failed attempts feed the reason forward, give up after maxAttempts, and �
   assert.match(headFile(root, '스터디/wiki/_review.md')!, /ingest `01JB8ZQ4M3T9X7K2W5R6N8P001` 포기 3\/3/);
   assert.ok(headFile(root, `스터디/raw/${ulid(1)}.md`), 'gave-up memo is committed, not lost');
   assert.deepEqual(await wiki.runNext(스터디), { kind: 'idle' });
-  assert.deepEqual((await wiki.status()).domains.find((d) => d.domain === 스터디), { domain: 스터디, pending: 0, held: 0, failed: 1, running: null });
+  assert.deepEqual((await wiki.status()).domains.find((d) => d.domain === 스터디), { domain: 스터디, agentsMayRead: true, modelProfile: null, pending: 0, held: 0, failed: 1, running: null });
 
   assert.deepEqual(await wiki.retry({ kind: 'ingest', domain: 스터디, id: ulid(99) }), { kind: 'not-failed' });
   assert.deepEqual(await wiki.retry({ kind: 'ingest', domain: 스터디, id: ulid(1) }), { kind: 'retrying' });

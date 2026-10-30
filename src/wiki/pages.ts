@@ -48,32 +48,12 @@ export function splitFrontmatter(text: string): { data: Frontmatter | null; body
 export const withFrontmatter = (data: Record<string, unknown>, body: string) => `---\n${stringifyYaml(data, { lineWidth: 0 })}---\n${body}`;
 
 
-function section(markdown: string, heading: string): string {
-  const lines = markdown.split('\n');
-  const start = lines.findIndex((l) => l.trim() === `## ${heading}`);
-  if (start < 0) return '';
-  const end = lines.findIndex((l, i) => i > start && /^##? /.test(l));
-  return lines.slice(start + 1, end < 0 ? undefined : end).join('\n');
-}
-
-function firstColumnCodes(markdown: string): readonly string[] {
-  const out: string[] = [];
-  for (const line of markdown.split('\n')) {
-    const m = /^\|\s*`([^`]+)`\s*\|/.exec(line.trim());
-    if (m) out.push(m[1]!.normalize('NFC'));
-  }
-  return out;
-}
-
-export const domainTableFrom = (rootClaudeMd: string) => firstColumnCodes(section(rootClaudeMd, '도메인 목록'));
-
-/** `answer` is allowed in every domain but is not in the table; the caller adds it. */
-export const pageTypesFrom = (domainClaudeMd: string) => firstColumnCodes(section(domainClaudeMd, '페이지 종류'));
-
-export function requiredFieldsFrom(commonRules: string): readonly string[] {
-  const block = /```ya?ml\n([\s\S]*?)```/.exec(section(commonRules, '위키 페이지 frontmatter'));
-  return block ? [...block[1]!.matchAll(/^([A-Za-z_][\w-]*):/gm)].map((m) => m[1]!) : [];
-}
+/**
+ * The frontmatter every page and answer carries. A fixed contract, not configuration: the server
+ * writes all six on answer pages, builds index.md from `type` and `summary`, and tells each ingest
+ * to set `updated`.
+ */
+export const PAGE_FIELDS = ['type', 'summary', 'aliases', 'status', 'sources', 'updated'] as const;
 
 
 export type FileRole = 'page' | 'answer' | 'derived' | 'ledger' | 'review' | 'other';
@@ -309,7 +289,7 @@ export const PROBLEM_RULES = [
   'input-modified',  // a job input (raw/<id>.md, .source.md) changed during the job
   'append-only',     // _review.md at HEAD is not a prefix of the new content
   'frontmatter',     // page or answer missing a required field, or yaml that does not parse
-  'type',            // `type` is not in the domain's 페이지 종류 table (or `answer`)
+  'type',            // `type` is not one of the domain's page_types in dotoriwiki.yaml (or `answer`)
   'empty',           // empty file, or a page with an empty body
   'broken-link',     // a link in a changed page does not resolve
 ] as const;
@@ -333,7 +313,6 @@ export type CheckInput = {
   readonly reviewAtHead: string | null;
   /** The job's own domain from the working tree, every other domain from HEAD. */
   readonly names: PageNameIndex;
-  readonly requiredFields: readonly string[];
   readonly allowedTypes: ReadonlySet<string>;
   readonly outsideWrites: readonly string[];
   readonly modifiedInputs: readonly string[];
@@ -368,7 +347,7 @@ export function check(input: CheckInput): readonly Problem[] {
     const { data, body, error } = splitFrontmatter(text);
     if (!data) add('frontmatter', change.path, error ?? 'no frontmatter');
     else {
-      for (const f of input.requiredFields) if (missing(data[f])) add('frontmatter', change.path, `${f} missing`);
+      for (const f of PAGE_FIELDS) if (missing(data[f])) add('frontmatter', change.path, `${f} missing`);
       if (typeof data.type === 'string' && !input.allowedTypes.has(data.type)) {
         add('type', change.path, `type ${data.type} is not one of ${[...input.allowedTypes].join(', ')}`);
       }

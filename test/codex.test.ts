@@ -22,7 +22,7 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), 'fixture', 'codex');
 const jsonl = (name: string) => readFileSync(join(dir, name), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
 const finished = (events: Record<string, unknown>[], extra: Partial<Finished> = {}): Finished => ({ code: 0, timedOut: false, spawnError: null, stderr: '', events, ...extra });
 const editReq = (cwd: string, onTouch: (p: string) => void = () => undefined): EditRequest => ({
-  domain: '스터디' as DomainName, cwd, systemPrompt: '# 스터디', prompt: '- 메모', timeoutMs: 60_000, writableDir: 'wiki', verdicts: ['새 페이지'], onTouch,
+  modelProfile: null, cwd, systemPrompt: '# 스터디', prompt: '- 메모', timeoutMs: 60_000, writableDir: 'wiki', verdicts: ['새 페이지'], onTouch,
 });
 
 test('a recorded classifier call parses to a classification', () => {

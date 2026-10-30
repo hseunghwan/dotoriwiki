@@ -46,9 +46,9 @@ const wiki = await openWiki(root, {
   fetchSource: sourceFetcher({ http: fetch, run: execRun, ytDlp: process.env.YT_DLP_BIN ?? 'yt-dlp' }),
   maxAttempts: 3,
   reviewBelowConfidence: 0.6,
-  fallbackDomain: '일상',
   ingestTimeoutMs: 10 * 60_000,
   committer: { name: 'llmwiki-gateway', email: 'gateway@localhost' },
+  modelProfiles: ['default'],
 });
 
 const capped = Object.fromEntries(Object.entries(FEEDS).map(([name, feed]) => [name, { ...feed, cap: 2 }]));
@@ -57,14 +57,14 @@ const loops = startLoops(wiki, {
   rescanMs: 5_000,
   backoffMs: 10_000,
   collector: {
-    poll: async () => (collected = await pollFeeds(capped, { http: fetch, accept: (m) => wiki.accept(m), now: () => new Date() })),
+    poll: async () => (collected = await pollFeeds(capped, await wiki.config(), { http: fetch, accept: (m) => wiki.accept(m), now: () => new Date() })),
     firstMs: 0,
     everyMs: 24 * 3_600_000,
   },
   onReport: (where, r) => console.log(`[${stamp()}] ${where} ${JSON.stringify(r).slice(0, 400)}`),
 });
 
-const tz = 'Asia/Seoul';
+const tz = (await wiki.config()).timeZone;
 const memos = [
   { text: '이 영상 나중에 꼭 봐야지 https://youtu.be/0RCkKrm8Hgw', domain_hint: '미루기 아카이빙' },
   { text: 'UEFI 펌웨어 취약점 기사 https://arstechnica.com/security/2026/10/code-execution-flaw-in-uefi-firmware-threatens-most-servers-on-planet-earth/' },
@@ -115,7 +115,7 @@ try {
 
   section('commits');
   console.log(git(root, 'log', '--format=%h %s', `${baseCommit}..HEAD`));
-  for (const d of await wiki.domains()) {
+  for (const d of (await wiki.config()).domains.keys()) {
     const lines = git(root, 'diff', `${baseCommit}..HEAD`, '--', `${d}/wiki/log.md`).split('\n').filter((l) => l.startsWith('+## ['));
     if (lines.length) console.log(`\n${d}/wiki/log.md\n${lines.join('\n')}`);
   }

@@ -10,7 +10,7 @@
  */
 
 import type { FeedReport } from './feeds.ts';
-import type { DomainName, RouteReport, RunReport, Wiki } from './wiki/index.ts';
+import { WikiConfigError, type DomainName, type RouteReport, type RunReport, type Wiki } from './wiki/index.ts';
 
 export type Collector = {
   readonly poll: () => Promise<readonly FeedReport[]>;
@@ -66,8 +66,13 @@ export function startLoops(wiki: Wiki, opts: LoopOptions): { stop(): Promise<voi
   const running: Promise<void>[] = [];
   const fail = (where: string, e: unknown) => opts.onReport(where, { kind: 'error', message: (e as Error).stack ?? String(e) });
 
+  /** Paused, there is nothing to spawn; the router reports why. */
   async function spawnMissingWorkers(): Promise<void> {
-    for (const d of await wiki.domains()) {
+    const config = await wiki.config().catch((e: unknown) => {
+      if (e instanceof WikiConfigError) return null;
+      throw e;
+    });
+    for (const d of config?.domains.keys() ?? []) {
       if (workers.has(d) || stopped) continue;
       const wake = signal();
       workers.set(d, wake);
@@ -76,6 +81,7 @@ export function startLoops(wiki: Wiki, opts: LoopOptions): { stop(): Promise<voi
   }
 
   async function routerLoop(): Promise<void> {
+    let pausedBy = '';
     while (!stopped) {
       if (Date.now() < pausedUntil) {
         await router.wait(pausedUntil - Date.now());
@@ -89,8 +95,10 @@ export function startLoops(wiki: Wiki, opts: LoopOptions): { stop(): Promise<voi
         await router.wait(opts.backoffMs);
         continue;
       }
-      if (r.kind !== 'idle') opts.onReport('router', r);
-      if (r.kind === 'idle') {
+      const why = r.kind === 'paused' ? JSON.stringify(r.problems) : '';
+      if (r.kind !== 'idle' && (r.kind !== 'paused' || why !== pausedBy)) opts.onReport('router', r);
+      pausedBy = why;
+      if (r.kind === 'idle' || r.kind === 'paused') {
         await router.wait(opts.rescanMs);
         await spawnMissingWorkers().catch((e) => fail('router', e));
       } else if (r.kind === 'unavailable') pause(r.retryAfterMs);
@@ -113,8 +121,9 @@ export function startLoops(wiki: Wiki, opts: LoopOptions): { stop(): Promise<voi
         await wake.wait(opts.backoffMs);
         continue;
       }
-      if (r.kind !== 'idle') opts.onReport(`worker ${d}`, r);
-      if (r.kind === 'idle') await wake.wait(withLlm ? opts.rescanMs : Math.min(opts.rescanMs, llmAt - Date.now()));
+      if (r.kind !== 'idle' && r.kind !== 'paused') opts.onReport(`worker ${d}`, r);
+      if (r.kind === 'paused') await wake.wait(opts.rescanMs);
+      else if (r.kind === 'idle') await wake.wait(withLlm ? opts.rescanMs : Math.min(opts.rescanMs, llmAt - Date.now()));
       else if (r.kind === 'unavailable') pause(r.retryAfterMs);
       else if (r.kind === 'retrying') backoffUntil = Date.now() + opts.backoffMs * 2 ** (r.attempt - 1);
       else backoffUntil = 0;
@@ -137,7 +146,11 @@ export function startLoops(wiki: Wiki, opts: LoopOptions): { stop(): Promise<voi
   const unwatch = wiki.watch((w) => {
     if (w.kind === 'router') router.notify();
     else if (w.kind === 'domain') workers.get(w.domain)?.notify();
-    else void spawnMissingWorkers().catch((e) => fail('watch', e));
+    else {
+      router.notify();
+      for (const worker of workers.values()) worker.notify();
+      void spawnMissingWorkers().catch((e) => fail('watch', e));
+    }
   });
   running.push(routerLoop());
   if (opts.collector) running.push(collectorLoop(opts.collector));

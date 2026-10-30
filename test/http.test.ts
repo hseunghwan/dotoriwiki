@@ -74,7 +74,14 @@ test('the boundary rejects bad tokens, bodies, and fields before anything is wri
 test('status, answers, and retry speak the wire contract', async () => {
   const s = await serve();
   const status = await s.call('GET', '/status');
-  assert.deepEqual(status, { status: 200, body: { server: '0.1.0', inbox: 0, domains: { '미루기 아카이빙': { pending: 0, held: 0, failed: 0, running: null }, 스터디: { pending: 0, held: 0, failed: 0, running: null }, 일상: { pending: 0, held: 0, failed: 0, running: null } } } });
+  const idle = { pending: 0, held: 0, failed: 0, running: null, model_profile: null };
+  assert.deepEqual(status, {
+    status: 200,
+    body: {
+      server: '0.1.0', inbox: 0, config: { state: 'ok', problems: [] },
+      domains: { 일상: { ...idle, agents_may_read: false }, 스터디: { ...idle, agents_may_read: true }, '미루기 아카이빙': { ...idle, agents_may_read: false } },
+    },
+  });
   const answer = { id: '01JB90A1C2D3E4F5G6H7J8K9MN', domain: '스터디', question: '질문?', answer: '답', cited: ['스터디/wiki/RAG'] };
   assert.deepEqual(await s.call('POST', '/answers', answer), { status: 422, body: { error: 'unprocessable', detail: 'cited page 스터디/wiki/RAG does not exist' } });
   assert.deepEqual(await s.call('POST', '/answers', { ...answer, cited: [] }), { status: 202, body: { id: answer.id, status: 'accepted' } });

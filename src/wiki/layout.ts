@@ -12,23 +12,27 @@ import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
+import { CONFIG_FILE } from './config.ts';
 import type { DomainName, JobRef } from './index.ts';
 
 const nfc = (s: string) => s.normalize('NFC');
 
 export type Layout = {
   readonly root: string;
+  readonly configFile: string;
   readonly inboxDir: string;
   readonly rejectedDir: string;
   answersInboxDir(d: DomainName): string;
   domainDir(d: DomainName): string;
+  /** <d>/CLAUDE.md: the domain's prose, which a declared domain must have. */
+  domainSchema(d: DomainName): string;
   rawDir(d: DomainName): string;
   holdDir(d: DomainName): string;
   wikiDir(d: DomainName): string;
   inflightFile(d: DomainName): string;
+  readonly inflightDir: string;
   readonly lockFile: string;
   readonly rootSchema: string;
-  readonly commonRules: string;
   /** Repo-relative paths, as git prints them. */
   wikiRel(d: DomainName): string;
   logRel(d: DomainName): string;
@@ -43,24 +47,26 @@ export type Layout = {
 };
 
 /** A wake whose domain segment has not been checked against the domain list yet. */
-export type RawWake = { readonly kind: 'router' } | { readonly kind: 'domain'; readonly name: string } | { readonly kind: 'domains-changed' };
+export type RawWake = { readonly kind: 'router' } | { readonly kind: 'domain'; readonly name: string } | { readonly kind: 'config-changed' };
 
 export function layout(rootIn: string): Layout {
   const root = nfc(resolve(rootIn));
   const gateway = join(root, '.gateway');
   return {
     root,
+    configFile: join(root, CONFIG_FILE),
     inboxDir: join(root, 'inbox'),
     rejectedDir: join(root, 'inbox', '.rejected'),
     answersInboxDir: (d) => join(root, 'inbox', 'answers', d),
     domainDir: (d) => join(root, d),
+    domainSchema: (d) => join(root, d, 'CLAUDE.md'),
     rawDir: (d) => join(root, d, 'raw'),
     holdDir: (d) => join(root, d, 'hold'),
     wikiDir: (d) => join(root, d, 'wiki'),
     inflightFile: (d) => join(gateway, 'inflight', `${d}.json`),
+    inflightDir: join(gateway, 'inflight'),
     lockFile: join(gateway, 'lock'),
     rootSchema: join(root, 'CLAUDE.md'),
-    commonRules: join(root, '_schema', '공통규칙.md'),
     wikiRel: (d) => `${d}/wiki`,
     logRel: (d) => `${d}/wiki/log.md`,
     indexRel: (d) => `${d}/wiki/index.md`,
@@ -73,27 +79,17 @@ export function layout(rootIn: string): Layout {
     },
     fromRel: (rel) => join(root, ...rel.split('/')),
     wakeFor(rel) {
+      if (rel === CONFIG_FILE) return { kind: 'config-changed' };
       const parts = nfc(rel).split('/');
       if (parts[0] === 'inbox') {
         if (parts.length === 2 && parts[1]!.endsWith('.md') && !parts[1]!.startsWith('.')) return { kind: 'router' };
         if (parts[1] === 'answers' && parts.length === 4) return { kind: 'domain', name: parts[2]! };
         return null;
       }
-      if (parts.length === 2 && parts[1] === 'CLAUDE.md' && !parts[0]!.startsWith('_') && !parts[0]!.startsWith('.')) return { kind: 'domains-changed' };
       if (parts.length === 3 && parts[1] === 'raw' && !parts[2]!.startsWith('.')) return { kind: 'domain', name: parts[0]! };
       return null;
     },
   };
-}
-
-/** Subdirectories of root that contain CLAUDE.md and do not start with `_` or `.`. NFC, sorted. */
-export async function listDomainDirs(root: string): Promise<readonly string[]> {
-  const out: string[] = [];
-  for (const e of await fs.readdir(root, { withFileTypes: true })) {
-    if (!e.isDirectory() || e.name.startsWith('_') || e.name.startsWith('.')) continue;
-    if (await exists(join(root, e.name, 'CLAUDE.md'))) out.push(nfc(e.name));
-  }
-  return out.sort();
 }
 
 export async function exists(path: string): Promise<boolean> {

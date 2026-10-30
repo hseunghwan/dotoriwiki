@@ -106,7 +106,15 @@ export type StatusResponse = {
     held: number;
     failed: number;
     running: { kind: string; id: string; since: string } | null;
+    /** Absent from gateways older than dotoriwiki.yaml, as is `config`. */
+    agents_may_read?: boolean;
+    model_profile?: string | null;
   }>;
+  /**
+   * paused: dotoriwiki.yaml is broken, `domains` is empty, and memos wait in the inbox until it is
+   * fixed. ok: `problems` are warnings, such as a model_profile this machine does not have.
+   */
+  config?: { state: 'ok' | 'paused'; problems: { key: string; problem: string; fix: string }[] };
 };
 
 /** GET /held. Memos the classifier was unsure of wait here, oldest captured first, until confirmed or moved. */
@@ -136,7 +144,7 @@ export type RetryRequest = { domain: string; kind: 'ingest' | 'file-answer'; id:
 export type RetryResponse = { status: 'retrying' };
 
 export type ErrorResponse = {
-  error: 'unauthorized' | 'bad_request' | 'not_found' | 'unprocessable' | 'conflict' | 'too_large' | 'internal';
+  error: 'unauthorized' | 'bad_request' | 'not_found' | 'unprocessable' | 'conflict' | 'too_large' | 'internal' | 'paused';
   detail?: string;
 };
 

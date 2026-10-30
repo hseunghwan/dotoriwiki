@@ -11,8 +11,8 @@ import type { AddressInfo } from 'node:net';
 import type { AnswerResponse, ChatFrame, ErrorResponse, HeldResponse, MemoListResponse, ReleaseResponse, RetryResponse, StatusResponse } from './api.ts';
 import type { ChatOut, ChatTurn } from './chat.ts';
 import {
-  pageRefString, parseAnswerId, parseMemoId, parsePageRef, type AnswerFiling, type JobRef, type MemoCursor, type MemoId, type Parsed, type PageRef,
-  type ReleaseResult, type Wiki,
+  domainIn, pageRefString, parseAnswerId, parseMemoId, parsePageRef, WikiConfigError, type AnswerFiling, type JobRef, type MemoCursor, type MemoId,
+  type Parsed, type PageRef, type ReleaseResult, type Wiki,
 } from './wiki/index.ts';
 import { handleMcp } from './mcp.ts';
 import { acceptMemo, detailWire, listItem } from './wire.ts';
@@ -76,14 +76,15 @@ export async function parseAnswerRequest(body: unknown, wiki: Wiki, now: Date): 
   if (!isRecord(body)) return bad('body: expected a JSON object');
   const id = typeof body.id === 'string' ? parseAnswerId(body.id) : null;
   if (!id) return bad('id: expected a ULID or UUID');
-  const domain = typeof body.domain === 'string' ? await wiki.parseDomain(body.domain) : null;
+  const config = await wiki.config();
+  const domain = typeof body.domain === 'string' ? domainIn(config, body.domain) : null;
   if (!domain) return bad('domain: not a domain');
   const question = nonEmpty(body.question, 'question');
   if (!question.ok) return question;
   const answer = nonEmpty(body.answer, 'answer');
   if (!answer.ok) return answer;
   if (!Array.isArray(body.cited) || !body.cited.every((c) => typeof c === 'string')) return bad('cited: expected an array of strings');
-  const domains = await wiki.domains();
+  const domains = [...config.domains.keys()];
   const cited: PageRef[] = [];
   for (const c of body.cited as string[]) {
     const ref = parsePageRef(c, domain, domains);
@@ -100,7 +101,7 @@ export async function parseAnswerRequest(body: unknown, wiki: Wiki, now: Date): 
 
 export async function parseChatRequest(body: unknown, wiki: Wiki): Promise<Parsed<ChatTurn>> {
   if (!isRecord(body)) return bad('body: expected a JSON object');
-  const target = body.target === 'root' ? ({ kind: 'root' } as const) : typeof body.target === 'string' ? await wiki.parseDomain(body.target) : null;
+  const target = body.target === 'root' ? ({ kind: 'root' } as const) : typeof body.target === 'string' ? domainIn(await wiki.config(), body.target) : null;
   if (!target) return bad('target: "root" or a domain');
   const message = nonEmpty(body.message, 'message');
   if (!message.ok) return message;
@@ -129,7 +130,7 @@ export function parseMemoListQuery(url: string): Parsed<{ limit: number; before:
 
 export async function parseRetryRequest(body: unknown, wiki: Wiki): Promise<Parsed<JobRef>> {
   if (!isRecord(body)) return bad('body: expected a JSON object');
-  const domain = typeof body.domain === 'string' ? await wiki.parseDomain(body.domain) : null;
+  const domain = typeof body.domain === 'string' ? domainIn(await wiki.config(), body.domain) : null;
   if (!domain) return bad('domain: not a domain');
   const kind = body.kind;
   if (kind !== 'ingest' && kind !== 'file-answer') return bad('kind: ingest or file-answer');
@@ -187,7 +188,7 @@ async function postConfirm(deps: HttpDeps, param: string | null): Promise<Reply>
 async function postMove(deps: HttpDeps, body: unknown, param: string | null): Promise<Reply> {
   const id = memoIdParam(param);
   if (!id.ok) return error(400, 'bad_request', id.detail);
-  const to = isRecord(body) && typeof body.domain === 'string' ? await deps.wiki.parseDomain(body.domain) : null;
+  const to = isRecord(body) && typeof body.domain === 'string' ? domainIn(await deps.wiki.config(), body.domain) : null;
   if (!to) return error(400, 'bad_request', 'domain: not a domain');
   return released(id.value, await deps.wiki.move(id.value, to));
 }
@@ -229,9 +230,13 @@ async function getStatus(deps: HttpDeps): Promise<Reply> {
   const s = await deps.wiki.status();
   const domains: StatusResponse['domains'] = {};
   for (const d of s.domains) {
-    domains[d.domain] = { pending: d.pending, held: d.held, failed: d.failed, running: d.running && { kind: d.running.kind, id: d.running.id, since: d.running.since } };
+    domains[d.domain] = {
+      pending: d.pending, held: d.held, failed: d.failed, running: d.running && { kind: d.running.kind, id: d.running.id, since: d.running.since },
+      agents_may_read: d.agentsMayRead, model_profile: d.modelProfile,
+    };
   }
-  return json(200, { server: deps.serverVersion, inbox: s.inbox, domains } satisfies StatusResponse);
+  const config = { state: s.paused ? 'paused' : 'ok', problems: s.problems.map(({ key, problem, fix }) => ({ key, problem, fix })) } as const;
+  return json(200, { server: deps.serverVersion, inbox: s.inbox, domains, config } satisfies StatusResponse);
 }
 
 function frame(out: ChatOut): ChatFrame {
@@ -303,6 +308,7 @@ export async function startHttp(deps: HttpDeps, listen: Listen): Promise<{ reado
       } catch (e) {
         if (res.headersSent) return void res.end();
         if (e instanceof BodyError) return send(error(e.status, e.code, e.message));
+        if (e instanceof WikiConfigError) return send(error(503, 'paused', e.message));
         console.error(JSON.stringify({ t: new Date().toISOString(), where: 'http', error: (e as Error).stack }));
         send(error(500, 'internal'));
       }

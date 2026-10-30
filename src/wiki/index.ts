@@ -14,6 +14,7 @@
  *   <domain>/raw/<id>.source.md       enrichment sidecar          runNext(), written once after the marker, before the LLM runs
  *   <domain>/wiki/**                  pages                       changed only inside runNext(domain)
  *   <domain>/wiki/log.md              THE LEDGER                  appended by runNext/retry/move; anything the LLM writes to it is reset
+ *   dotoriwiki.yaml                   the wiki's configuration    written by the user; committed as manual(config) before a job
  *   .gateway/inflight/<domain>.json   "a job is mid-flight"       exists only while runNext(domain) is mid-job
  *   .gateway/lock                     one gateway process         (pid, process start time)
  *
@@ -34,6 +35,11 @@
  * Done means committed. A log.md line in the working tree but not in HEAD counts for nothing.
  * hold/ is never committed and never picked: a held memo has no job until the user releases it.
  *
+ * Config rule. Every call that needs the configuration reads dotoriwiki.yaml (re-parsed only when
+ * its text changed) and checks each declared domain has its CLAUDE.md. While that fails the wiki
+ * is paused: routeNext and runNext report `paused`, the calls that need the domain list throw
+ * WikiConfigError, and accept() still writes the inbox. The next call after a fix resumes.
+ *
  * Only this file is importable from outside src/wiki/ (test/boundary.test.ts). git.ts in
  * particular must stay unreachable: a commit made outside runNext would break the ledger.
  */
@@ -41,16 +47,20 @@
 import { createHash } from 'node:crypto';
 import { promises as fs, watch as fsWatch } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
+import {
+  CONFIG_FILE, domainIn, parseWikiConfig, renderDomainCatalog, renderPageTypes, WikiConfigError, type ConfigParse, type ConfigProblem, type DomainConfig,
+  type MachineFacts, type ModelProfile, type WikiConfig,
+} from './config.ts';
 import { openGit, type AppendedLine, type Git } from './git.ts';
 import {
-  acquireLock, clearInflight, composeSystemPrompt, exists, layout, linkExclusive, listDomainDirs, listMarkdown, listNames,
+  acquireLock, clearInflight, composeSystemPrompt, exists, layout, linkExclusive, listMarkdown, listNames,
   readIfExists, readInflight, sweepTmp, unlinkQuiet, writeExclusive, writeInflight, type InflightMarker, type Layout,
 } from './layout.ts';
 import { appendLine, lineKey, parseLedger, type Failure, type JobHistory, type Ledger, type LedgerOutcome } from './ledger.ts';
 import {
-  check, describeProblems, domainTableFrom, firstProblem, extractWikilinks, linkResolves, namesOf, pageMeta, pageRefString, pageTypesFrom, parseAnswerId,
+  check, describeProblems, firstProblem, extractWikilinks, linkResolves, namesOf, PAGE_FIELDS, pageMeta, pageRefString, parseAnswerId,
   parseAnswerStaging, parseMemoFile, parseMemoId, renderAnswerPage, renderAnswerStaging, renderIndex, renderMemoFile,
-  requiredFieldsFrom, roleOf, type MEMO_SOURCES, type PageNameIndex, type Problem,
+  roleOf, type MEMO_SOURCES, type PageNameIndex, type Problem,
 } from './pages.ts';
 import { isoWithOffset, linksToFetch, renderSourceFile } from './sources.ts';
 
@@ -62,7 +72,7 @@ export type { SourceEntry, SourceFile } from './sources.ts';
 export { isoWithOffset, parseSourceFile } from './sources.ts';
 
 
-/** A folder under the root that has a CLAUDE.md and does not start with `_`. NFC. Minted only by Wiki. */
+/** A domain declared in dotoriwiki.yaml. NFC. Minted only by parseWikiConfig. */
 export type DomainName = string & { readonly __brand: 'DomainName' };
 /** Client-made ULID or UUID, normalized. Minted only by parseMemoId / parseAnswerId. */
 export type MemoId = string & { readonly __brand: 'MemoId' };
@@ -176,26 +186,31 @@ export type RouteReport =
   | { readonly kind: 'routed' | 'held'; readonly id: MemoId; readonly domain: DomainName; readonly routing: Routing }
   | { readonly kind: 'dropped-duplicate'; readonly id: MemoId }
   | { readonly kind: 'rejected'; readonly file: string; readonly reason: string }
-  | { readonly kind: 'unavailable'; readonly reason: string; readonly retryAfterMs: number };
+  | { readonly kind: 'unavailable'; readonly reason: string; readonly retryAfterMs: number }
+  | { readonly kind: 'paused'; readonly problems: readonly ConfigProblem[] };
 
 export type RunReport =
   | { readonly kind: 'idle' }
   | { readonly kind: 'committed'; readonly job: JobRef; readonly commit: string; readonly verdict: string }
   | { readonly kind: 'retrying'; readonly job: JobRef; readonly attempt: number; readonly problems: readonly Problem[] }
   | { readonly kind: 'gave-up'; readonly job: JobRef; readonly problems: readonly Problem[] }
-  | { readonly kind: 'unavailable'; readonly job: JobRef; readonly reason: string; readonly retryAfterMs: number };
+  | { readonly kind: 'unavailable'; readonly job: JobRef; readonly reason: string; readonly retryAfterMs: number }
+  | { readonly kind: 'paused' };
 
 export type RetryResult = { readonly kind: 'retrying' } | { readonly kind: 'not-failed' };
 
 
 export type DomainStatus = {
   readonly domain: DomainName;
+  readonly agentsMayRead: boolean;
+  readonly modelProfile: ModelProfile | null;
   readonly pending: number;
   readonly held: number;
   readonly failed: number;
   readonly running: (JobRef & { readonly since: string }) | null;
 };
-export type Status = { readonly inbox: number; readonly domains: readonly DomainStatus[] };
+/** Paused: `domains` is empty and `problems` say why. Running: `problems` are warnings, such as an unknown model profile. */
+export type Status = { readonly inbox: number; readonly paused: boolean; readonly problems: readonly ConfigProblem[]; readonly domains: readonly DomainStatus[] };
 
 export type ChatTarget = { readonly kind: 'root' } | { readonly kind: 'domain'; readonly domain: DomainName };
 /** Where a read-only chat runs and what it is told. systemPrompt is CLAUDE.md with `@` imports inlined. */
@@ -205,7 +220,7 @@ export type ChatContext = { readonly cwd: string; readonly systemPrompt: string 
 export type Wake =
   | { readonly kind: 'router' }
   | { readonly kind: 'domain'; readonly domain: DomainName }
-  | { readonly kind: 'domains-changed' };
+  | { readonly kind: 'config-changed' };
 
 
 /** Infrastructure trouble: rate limit, auth, spawn failure. Never spends a job attempt. */
@@ -223,8 +238,8 @@ export type Classification =
 
 /** One agentic edit run in `cwd` with file tools only. */
 export type EditRequest = {
-  /** Lets the Llm pick a model per domain. */
-  readonly domain: DomainName;
+  /** The domain's model_profile; null is edit.default. */
+  readonly modelProfile: ModelProfile | null;
   readonly cwd: string;
   readonly systemPrompt: string;
   readonly prompt: string;
@@ -262,23 +277,24 @@ export type WikiOptions = {
   readonly maxAttempts: number;
   /** A classifier answer below this confidence, like a fallback, waits in hold/ for the user. */
   readonly reviewBelowConfidence: number;
-  /** Root CLAUDE.md rule 5. Must name a real domain or openWiki throws. */
-  readonly fallbackDomain: string;
   readonly ingestTimeoutMs: number;
   readonly committer: { readonly name: string; readonly email: string };
-  readonly tz?: string;
+  /** The keys of the machine's models.json edit map, which a domain's model_profile must name. */
+  readonly modelProfiles: readonly string[];
   readonly now?: () => Date;
 };
 
 export interface Wiki {
-  /** Rescans the root on every call. Adding a folder with a CLAUDE.md is how a domain is added. */
-  domains(): Promise<readonly DomainName[]>;
-  parseDomain(name: string): Promise<DomainName | null>;
+  /**
+   * dotoriwiki.yaml as of this call, or WikiConfigError while it is broken. A domain is added by
+   * creating <d>/CLAUDE.md and its entry in the file; the next call sees it.
+   */
+  config(): Promise<WikiConfig>;
   /** Makes the memo durable, never calls an LLM. Resending an id changes nothing on disk. */
   accept(memo: Memo): Promise<AcceptResult>;
   /** Checks every cited page exists at HEAD, then stages the answer for its domain worker. */
   fileAnswer(filing: AnswerFiling): Promise<FileAnswerResult>;
-  /** Routes the oldest inbox memo. Unavailable leaves it in the inbox untouched. */
+  /** Routes the oldest inbox memo. Unavailable and paused leave it in the inbox untouched. */
   routeNext(): Promise<RouteReport>;
   /** Memos waiting in hold/, oldest captured first. */
   held(): Promise<readonly HeldMemo[]>;
@@ -295,7 +311,8 @@ export interface Wiki {
   /**
    * Runs the domain's next derived job as one transaction ending in exactly one commit: the
    * work, or a ledger line saying why not. Unavailable commits nothing and spends no attempt.
-   * With `withLlm: false`, only jobs that need no LLM are picked.
+   * With `withLlm: false`, only jobs that need no LLM are picked. A domain declared since open
+   * gets its init(<d>) commit first; a domain no longer declared is idle.
    */
   runNext(domain: DomainName, opts?: { readonly withLlm?: boolean }): Promise<RunReport>;
   /** Appends a 재시도 line for a job that gave up, so the worker picks it again. */
@@ -308,18 +325,12 @@ export interface Wiki {
   close(): Promise<void>;
 }
 
-/** The domain folders, read without opening the wiki, so startup config can name them. */
-export async function listDomains(root: string): Promise<readonly DomainName[]> {
-  return (await listDomainDirs(root)) as readonly DomainName[];
-}
-
 /**
- * Takes .gateway/lock, then checks the folder against its own schema: the root CLAUDE.md
- * 도메인 목록 table must list exactly the domain folders, fallbackDomain must be one of them,
- * 공통규칙 must name the required page fields, and each domain must have a 페이지 종류 table.
- * Removes a stale .git/index.lock and orphaned .tmp-* files, and commits `init(<d>)` for every
- * domain not yet in HEAD. Inflight markers are left to runNext, so a crash and a thrown
- * exception take the same recovery path.
+ * Takes .gateway/lock and checks the faults no edit of dotoriwiki.yaml can fix while running: the
+ * root is a git work tree and the file exists with a version this gateway reads. A file broken in
+ * any other way opens paused. Removes a stale .git/index.lock and orphaned .tmp-* files, and
+ * commits `init(<d>)` for every declared domain not yet in HEAD. Inflight markers are left to
+ * runNext, so a crash and a thrown exception take the same recovery path.
  */
 export async function openWiki(root: string, opts: WikiOptions): Promise<Wiki> {
   // claude reports the paths it touched by real path, so a symlinked root (macOS tmpdir) must not count as outside.
@@ -327,24 +338,16 @@ export async function openWiki(root: string, opts: WikiOptions): Promise<Wiki> {
   const lock = await acquireLock(lay.lockFile);
   try {
     if (!(await exists(join(lay.root, '.git')))) throw new Error(`not a git work tree: ${lay.root}`);
+    const text = await readIfExists(lay.configFile);
+    if (text === null) throw new Error(`not a dotoriwiki wiki: ${lay.configFile} does not exist`);
+    const version = parseWikiConfig(text, { modelProfiles: new Set() });
+    const unknown = version.ok ? undefined : version.problems.find((p) => p.key === 'version');
+    if (unknown) throw new Error(`${lay.configFile}: version ${unknown.problem}`);
     const git = openGit(lay.root, opts.committer);
     await git.clearIndexLock();
-    const domains = await listDomainDirs(lay.root);
-    const table = domainTableFrom(await fs.readFile(lay.rootSchema, 'utf8'));
-    if ([...table].sort().join('\n') !== domains.join('\n')) {
-      throw new Error(`root CLAUDE.md 도메인 목록 [${table.join(', ')}] does not match the domain folders [${domains.join(', ')}]`);
-    }
-    if (!domains.includes(opts.fallbackDomain.normalize('NFC'))) throw new Error(`fallbackDomain ${opts.fallbackDomain} is not a domain`);
-    if (requiredFieldsFrom(await fs.readFile(lay.commonRules, 'utf8')).length === 0) {
-      throw new Error(`${lay.commonRules} has no 위키 페이지 frontmatter yaml block`);
-    }
-    for (const d of domains) {
-      if (pageTypesFrom(await fs.readFile(join(lay.root, d, 'CLAUDE.md'), 'utf8')).length === 0) throw new Error(`${d}/CLAUDE.md has no 페이지 종류 table`);
-    }
-    const ds = domains as readonly DomainName[];
-    await sweepTmp([lay.inboxDir, dirname(lay.inflightFile(ds[0]!)), ...ds.flatMap((d) => [lay.answersInboxDir(d), lay.rawDir(d), lay.holdDir(d)])]);
+    await sweepTmp([lay.inboxDir, lay.inflightDir]);
     const wiki = new WikiImpl(lay, git, opts, lock);
-    await wiki.bootstrap(ds);
+    await wiki.bootstrap();
     return wiki;
   } catch (e) {
     await lock.release();
@@ -363,13 +366,14 @@ type Job =
 
 type Env = {
   readonly layout: Layout;
+  readonly config: WikiConfig;
   readonly llm: Llm;
   readonly fetchSource: FetchSource;
   readonly ingestTimeoutMs: number;
   readonly today: () => string;
   readonly stamp: () => string;
 };
-type JobCtx = { readonly history: JobHistory; readonly touch: (path: string) => void };
+type JobCtx = { readonly history: JobHistory; readonly touch: (path: string) => void; readonly domain: DomainConfig };
 type Performed = EditResult | Unavailable;
 type JobSpec<J extends Job> = {
   readonly needsLlm: boolean;
@@ -407,22 +411,19 @@ async function enrichIngest(env: Env, job: Extract<Job, { kind: 'ingest' }>): Pr
   return { ...job, inputs: [...job.inputs, rel] };
 }
 
-const ingestRules = (date: string, types: readonly string[], required: readonly string[]) => `## 서버가 정한 작업 규칙
+const ingestRules = (date: string, types: readonly string[]) => `## 서버가 정한 작업 규칙
 
 - 오늘 날짜는 ${date}다. 만들거나 고친 페이지의 \`updated\`에 쓴다.
 - 쓰기는 \`wiki/\` 아래에서만 한다. \`raw/\`, \`CLAUDE.md\`, 다른 도메인 폴더는 고치지 않는다.
 - \`wiki/index.md\`와 \`wiki/log.md\`는 서버가 쓴다. 읽기만 한다.
 - \`wiki/answers/\`는 저장된 질문 답이다. 정리 근거로 쓰지 않고 고치지 않는다.
-- 페이지 frontmatter에는 ${required.map((f) => `\`${f}\``).join(', ')}를 모두 단다. \`type\`은 ${types.map((t) => `\`${t}\``).join(', ')} 중 하나다.
+- 페이지 frontmatter에는 ${PAGE_FIELDS.map((f) => `\`${f}\``).join(', ')}를 모두 단다. \`type\`은 ${types.map((t) => `\`${t}\``).join(', ')} 중 하나다.
 - \`[[링크]]\`는 이미 있거나 이번에 만드는 위키 페이지에만 건다. 원본 id는 링크로 걸지 말고 \`sources\`와 본문에 글자로 적는다.
 - 빈 파일이나 본문 없는 페이지를 만들지 않는다.
 - 끝나면 판정(\`verdict\`)과 만들거나 고친 페이지의 \`wiki/\` 기준 경로 목록(\`pages\`)을 구조화된 응답으로 돌려준다.`;
 
 async function performIngest(env: Env, job: Extract<Job, { kind: 'ingest' }>, ctx: JobCtx): Promise<Performed> {
   const cwd = env.layout.domainDir(job.ref.domain);
-  const claudeMd = join(cwd, 'CLAUDE.md');
-  const types = pageTypesFrom(await fs.readFile(claudeMd, 'utf8'));
-  const required = requiredFieldsFrom(await fs.readFile(env.layout.commonRules, 'utf8'));
   const id = job.ref.id;
   const prompt = [
     `원본 \`raw/${id}.md\` 하나를 정리 작업 순서대로 위키에 반영해라.`,
@@ -430,9 +431,9 @@ async function performIngest(env: Env, job: Extract<Job, { kind: 'ingest' }>, ct
     ctx.history.lastFailure ? `\n지난 시도는 서버 검사에서 실패해 되돌려졌다. 이유: ${ctx.history.lastFailure.reason}\n같은 문제가 없도록 처음부터 다시 해라.` : '',
   ].filter(Boolean).join('\n');
   return env.llm.edit({
-    domain: job.ref.domain,
+    modelProfile: ctx.domain.modelProfile,
     cwd,
-    systemPrompt: `${await composeSystemPrompt(claudeMd)}\n\n${ingestRules(env.today(), types, required)}`,
+    systemPrompt: `${await composeSystemPrompt(env.layout.domainSchema(job.ref.domain))}\n\n${renderPageTypes(ctx.domain)}\n\n${ingestRules(env.today(), ctx.domain.pageTypes.map((t) => t.type))}`,
     prompt,
     timeoutMs: env.ingestTimeoutMs,
     writableDir: 'wiki',
@@ -546,7 +547,6 @@ class WikiImpl implements Wiki {
   readonly #git: Git;
   readonly #opts: WikiOptions;
   readonly #lock: { release(): Promise<void> };
-  readonly #env: Env;
   /** One writer of <d>/wiki/ at a time: held for a whole runNext. */
   readonly #jobLocks = new Map<string, ReturnType<typeof serializer>>();
   /** Held for each read-HEAD-log, append, commit section, so retry() never races a job's commit. */
@@ -557,26 +557,62 @@ class WikiImpl implements Wiki {
   readonly #ledgersAtHead = perHead<ReadonlyMap<DomainName, Ledger>>();
   /** `${domain}\0${kind}:${id}` → the commit of each of that job's ledger lines, in ledger order. */
   readonly #ledgerCommits = perHead<ReadonlyMap<string, readonly AppendedLine[]>>();
+  readonly #machine: MachineFacts;
+  #parsed: { readonly text: string; readonly parse: ConfigParse } | null = null;
+  /** Domains whose init(<d>) is known to be in HEAD. */
+  readonly #ready = new Set<DomainName>();
+  readonly #configLock = serializer();
 
   constructor(lay: Layout, git: Git, opts: WikiOptions, lock: { release(): Promise<void> }) {
     this.#layout = lay;
     this.#git = git;
     this.#opts = opts;
     this.#lock = lock;
-    const tz = opts.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const day = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
-    this.#env = {
-      layout: lay,
-      llm: opts.llm,
-      fetchSource: opts.fetchSource,
-      ingestTimeoutMs: opts.ingestTimeoutMs,
-      today: () => day.format(this.#now()),
-      stamp: () => isoWithOffset(this.#now(), tz),
-    };
+    this.#machine = { modelProfiles: new Set(opts.modelProfiles.map((p) => p.normalize('NFC'))) };
   }
 
   #now(): Date {
     return this.#opts.now ? this.#opts.now() : new Date();
+  }
+
+  /** The config rule in the header: the file parsed when its text changed, then the CLAUDE.md files it needs. */
+  async #readConfig(): Promise<ConfigParse> {
+    const lay = this.#layout;
+    const text = await readIfExists(lay.configFile);
+    if (text === null) return { ok: false, problems: [{ key: CONFIG_FILE, problem: 'does not exist', fix: 'restore it from git' }] };
+    if (this.#parsed?.text !== text) this.#parsed = { text, parse: parseWikiConfig(text, this.#machine) };
+    const parsed = this.#parsed.parse;
+    if (!parsed.ok) return parsed;
+    const missing: ConfigProblem[] = [];
+    if (!(await exists(lay.rootSchema))) missing.push({ key: 'CLAUDE.md', problem: 'the root CLAUDE.md does not exist', fix: 'create it; the classifier reads it to route memos' });
+    for (const d of parsed.config.domains.keys()) {
+      if (!(await exists(lay.domainSchema(d)))) missing.push({ key: `domains.${d}`, problem: `${d}/CLAUDE.md does not exist`, fix: `create ${d}/CLAUDE.md, or remove the entry` });
+    }
+    return missing.length ? { ok: false, problems: [...missing, ...parsed.warnings] } : parsed;
+  }
+
+  async config(): Promise<WikiConfig> {
+    const r = await this.#readConfig();
+    if (!r.ok) throw new WikiConfigError(r.problems);
+    return r.config;
+  }
+
+  async #domains(): Promise<readonly DomainName[]> {
+    return [...(await this.config()).domains.keys()];
+  }
+
+  #env(config: WikiConfig): Env {
+    const tz = config.timeZone;
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+    return {
+      layout: this.#layout,
+      config,
+      llm: this.#opts.llm,
+      fetchSource: this.#opts.fetchSource,
+      ingestTimeoutMs: this.#opts.ingestTimeoutMs,
+      today: () => day.format(this.#now()),
+      stamp: () => isoWithOffset(this.#now(), tz),
+    };
   }
 
   #locked(map: Map<string, ReturnType<typeof serializer>>, d: DomainName) {
@@ -594,12 +630,12 @@ class WikiImpl implements Wiki {
   }
 
   /** The one place a ledger line is written: under the domain's ledger lock, on top of HEAD's log.md. */
-  async #commitLedger(d: DomainName, line: (head: Ledger) => { job: JobKind; id: string; outcome: LedgerOutcome } | null, paths: readonly string[], message: string): Promise<string | null> {
+  async #commitLedger(env: Env, d: DomainName, line: (head: Ledger) => { job: JobKind; id: string; outcome: LedgerOutcome } | null, paths: readonly string[], message: string): Promise<string | null> {
     return this.#locked(this.#ledgerLocks, d)(async () => {
       const text = await this.#headLog(d);
       const l = line(parseLedger(text));
       if (!l) return null;
-      await fs.writeFile(this.#layout.fromRel(this.#layout.logRel(d)), appendLine(text, { date: this.#env.today(), ...l }));
+      await fs.writeFile(this.#layout.fromRel(this.#layout.logRel(d)), appendLine(text, { date: env.today(), ...l }));
       return this.#git.commit([this.#layout.logRel(d), ...paths], message);
     });
   }
@@ -630,40 +666,48 @@ class WikiImpl implements Wiki {
     });
   }
 
-  async bootstrap(domains: readonly DomainName[]): Promise<void> {
-    const head = await this.#git.head();
-    for (const d of domains) {
-      if (head && (await this.#git.lsTree('HEAD', [this.#layout.logRel(d)])).length) continue;
-      const log = this.#layout.fromRel(this.#layout.logRel(d));
+  /** Manual edits of dotoriwiki.yaml, committed like a domain's before a job reads it. */
+  async #commitConfig(): Promise<void> {
+    await this.#configLock(async () => {
+      if ((await this.#git.status([CONFIG_FILE])).length) await this.#git.commit([CONFIG_FILE], 'manual(config)');
+    });
+  }
+
+  /** At open, while no router or worker runs: clears crash leftovers and inits every declared domain. Paused, it waits for the first job. */
+  async bootstrap(): Promise<void> {
+    const r = await this.#readConfig();
+    if (!r.ok) return;
+    const lay = this.#layout;
+    await sweepTmp([...r.config.domains.keys()].flatMap((d) => [lay.answersInboxDir(d), lay.rawDir(d), lay.holdDir(d)]));
+    await this.#commitConfig();
+    for (const d of r.config.domains.values()) await this.#init(d);
+  }
+
+  /** Commits `init(<d>)` unless HEAD has the domain's log.md. Idempotent. */
+  async #init(d: DomainConfig): Promise<void> {
+    if (this.#ready.has(d.name)) return;
+    if (!(await this.#git.head()) || !(await this.#git.lsTree('HEAD', [this.#layout.logRel(d.name)])).length) {
+      const log = this.#layout.fromRel(this.#layout.logRel(d.name));
       await fs.mkdir(dirname(log), { recursive: true });
       if ((await readIfExists(log)) === null) await fs.writeFile(log, '# log\n');
       await this.#writeIndex(d);
-      await this.#commitManual(d, `init(${d})`);
+      await this.#commitManual(d.name, `init(${d.name})`);
     }
+    this.#ready.add(d.name);
   }
 
-  async #writeIndex(d: DomainName): Promise<void> {
+  async #writeIndex(dc: DomainConfig): Promise<void> {
+    const d = dc.name;
     const wikiDir = this.#layout.wikiDir(d);
     const pages = [];
     for (const p of await listMarkdown(wikiDir)) {
       const role = roleOf(p);
       if (role === 'page' || role === 'answer') pages.push(pageMeta(p, (await readIfExists(join(wikiDir, ...p.split('/')))) ?? ''));
     }
-    const types = pageTypesFrom(await fs.readFile(join(this.#layout.domainDir(d), 'CLAUDE.md'), 'utf8'));
-    await fs.writeFile(join(wikiDir, 'index.md'), renderIndex(d, pages, types));
+    await fs.writeFile(join(wikiDir, 'index.md'), renderIndex(d, pages, dc.pageTypes.map((t) => t.type)));
   }
 
-  async domains(): Promise<readonly DomainName[]> {
-    return (await listDomainDirs(this.#layout.root)) as readonly DomainName[];
-  }
-
-  async parseDomain(name: string): Promise<DomainName | null> {
-    const n = name.normalize('NFC').trim();
-    return (await this.domains()).find((d) => d === n) ?? null;
-  }
-
-  async #places(): Promise<Places> {
-    const domains = await this.domains();
+  async #places(domains: readonly DomainName[]): Promise<Places> {
     const head = await this.#git.head();
     const key = `${head}\n${domains.join('\n')}`;
     const ledgers = await this.#ledgersAtHead(key, async () => {
@@ -727,7 +771,7 @@ class WikiImpl implements Wiki {
   }
 
   async memos(opts: { readonly limit: number; readonly before: MemoCursor | null }): Promise<readonly MemoSummary[]> {
-    const places = await this.#places();
+    const places = await this.#places(await this.#domains());
     const found: Found[] = [];
     for (const id of new Set([...places.inbox, ...places.domains.flatMap((d) => [...d.raw, ...d.hold])])) {
       const f = await this.#found(places, id);
@@ -742,7 +786,7 @@ class WikiImpl implements Wiki {
   }
 
   async memo(id: MemoId): Promise<MemoDetail | null> {
-    const places = await this.#places();
+    const places = await this.#places(await this.#domains());
     const f = await this.#found(places, id);
     if (!f) return null;
     const summary = await this.#summary(places, f);
@@ -770,14 +814,16 @@ class WikiImpl implements Wiki {
     return out;
   }
 
-  async #locate(id: MemoId): Promise<Located | null> {
-    return locate(await this.#places(), id);
+  async #locate(id: MemoId, domains?: readonly DomainName[]): Promise<Located | null> {
+    return locate(await this.#places(domains ?? (await this.#domains())), id);
   }
 
+  /** Paused, a memo already routed elsewhere is not found, and routeNext drops its inbox copy once the wiki resumes. */
   async accept(memo: Memo): Promise<AcceptResult> {
     const name = `${memo.id}.md`;
     const wrote = await writeExclusive(this.#layout.inboxDir, name, renderMemoFile(memo, null));
-    const at = await this.#locate(memo.id);
+    const config = await this.#readConfig();
+    const at = config.ok ? await this.#locate(memo.id, [...config.config.domains.keys()]) : null;
     if (at) {
       if (wrote === 'created') await unlinkQuiet(join(this.#layout.inboxDir, name));
       return { kind: 'duplicate', domain: at.domain, state: at.state };
@@ -805,6 +851,10 @@ class WikiImpl implements Wiki {
   }
 
   async routeNext(): Promise<RouteReport> {
+    const read = await this.#readConfig();
+    if (!read.ok) return { kind: 'paused', problems: read.problems };
+    const config = read.config;
+    const domains = [...config.domains.keys()];
     const inbox = this.#layout.inboxDir;
     const memos: Memo[] = [];
     for (const name of await listNames(inbox)) {
@@ -822,15 +872,15 @@ class WikiImpl implements Wiki {
     const memo = memos.sort((a, b) => (orderKey(a.capturedAt, a.id) < orderKey(b.capturedAt, b.id) ? -1 : 1))[0];
     if (!memo) return { kind: 'idle' };
     const inboxFile = join(inbox, `${memo.id}.md`);
-    if (await this.#locate(memo.id)) {
+    if (await this.#locate(memo.id, domains)) {
       await unlinkQuiet(inboxFile);
       return { kind: 'dropped-duplicate', id: memo.id };
     }
-    const domains = await this.domains();
-    let domain = memo.domainHint ? await this.parseDomain(memo.domainHint) : null;
+    let domain = memo.domainHint ? domainIn(config, memo.domainHint) : null;
     let routing: Routing = { by: 'hint' };
     if (!domain) {
-      const req = { systemPrompt: await fs.readFile(this.#layout.rootSchema, 'utf8'), text: classifierText(memo), domains };
+      const systemPrompt = `${await fs.readFile(this.#layout.rootSchema, 'utf8')}\n\n${renderDomainCatalog(config)}`;
+      const req = { systemPrompt, text: classifierText(memo), domains };
       let detail = '';
       for (let i = 0; i < 2 && !domain; i++) {
         const c = await this.#opts.llm.classify(req);
@@ -843,7 +893,7 @@ class WikiImpl implements Wiki {
         }
       }
       if (!domain) {
-        domain = (await this.parseDomain(this.#opts.fallbackDomain))!;
+        domain = config.fallbackDomain;
         routing = { by: 'fallback', reason: detail };
       }
     }
@@ -855,7 +905,11 @@ class WikiImpl implements Wiki {
 
   /** Also removes hold copies whose memo is already queued: the leftovers of an interrupted release. */
   async held(): Promise<readonly HeldMemo[]> {
-    const places = await this.#places();
+    return this.#held(await this.#domains());
+  }
+
+  async #held(domains: readonly DomainName[]): Promise<readonly HeldMemo[]> {
+    const places = await this.#places(domains);
     const out: HeldMemo[] = [];
     for (const { domain: d, hold } of places.domains) {
       for (const id of hold) {
@@ -886,6 +940,7 @@ class WikiImpl implements Wiki {
   }
 
   async move(id: MemoId, to: DomainName): Promise<ReleaseResult> {
+    const env = this.#env(await this.config());
     const first = await this.#locate(id);
     if (!first) return { kind: 'not-found' };
     if (first.domain === to || (first.state !== 'held' && first.state !== 'failed')) return { kind: 'conflict', ...first };
@@ -897,12 +952,12 @@ class WikiImpl implements Wiki {
       if (at.domain !== from || at.state !== first.state) return { kind: 'conflict', ...at };
       if (at.state === 'held') {
         const hold = join(this.#layout.holdDir(from), `${id}.md`);
-        await this.#place(id, from, to, await fs.readFile(hold, 'utf8'), null);
+        await this.#place(env, id, from, to, await fs.readFile(hold, 'utf8'), null);
         await unlinkQuiet(hold);
       } else {
         const raw = this.#layout.rawDir(from);
-        await this.#place(id, from, to, await fs.readFile(join(raw, `${id}.md`), 'utf8'), await readIfExists(join(raw, `${id}.source.md`)));
-        await this.#closeMove(from, to, id);
+        await this.#place(env, id, from, to, await fs.readFile(join(raw, `${id}.md`), 'utf8'), await readIfExists(join(raw, `${id}.source.md`)));
+        await this.#closeMove(env, from, to, id);
       }
       return { kind: 'released', domain: to };
     });
@@ -913,10 +968,11 @@ class WikiImpl implements Wiki {
    * never enriched twice. A domain the memo once left has a terminal line for it, so that
    * ledger gets a 재시도 first, or the new copy would never be picked.
    */
-  async #place(id: MemoId, from: DomainName, to: DomainName, memoFile: string, sidecar: string | null): Promise<void> {
+  async #place(env: Env, id: MemoId, from: DomainName, to: DomainName, memoFile: string, sidecar: string | null): Promise<void> {
     const parsed = parseMemoFile(memoFile);
     if (!parsed.ok) throw new Error(`${from} memo ${id} does not parse: ${parsed.detail}`);
     await this.#commitLedger(
+      env,
       to,
       (head) => (head.history('ingest', id).terminal ? { job: 'ingest', id, outcome: { kind: 'retry' } } : null),
       [],
@@ -928,10 +984,11 @@ class WikiImpl implements Wiki {
   }
 
   /** The commit that ends a gave-up memo's stay in `from`. Runs after #place, so a crash between leaves the evidence #finishMoves reads. */
-  async #closeMove(from: DomainName, to: DomainName, id: MemoId): Promise<void> {
+  async #closeMove(env: Env, from: DomainName, to: DomainName, id: MemoId): Promise<void> {
     const files = [this.#layout.rawRel(from, `${id}.md`), this.#layout.rawRel(from, `${id}.source.md`)];
     for (const f of files) await unlinkQuiet(this.#layout.fromRel(f));
     await this.#commitLedger(
+      env,
       from,
       (head) => (head.history('ingest', id).terminal?.kind === 'gave-up' ? { job: 'ingest', id, outcome: { kind: 'moved', to } } : null),
       await this.#git.lsTree('HEAD', files),
@@ -940,8 +997,8 @@ class WikiImpl implements Wiki {
   }
 
   /** The domain a crashed move of this gave-up memo already placed it in. */
-  async #movedTo(from: DomainName, id: MemoId): Promise<DomainName | null> {
-    for (const d of await this.domains()) {
+  async #movedTo(from: DomainName, id: MemoId, domains: readonly DomainName[]): Promise<DomainName | null> {
+    for (const d of domains) {
       if (d === from) continue;
       const parsed = parseMemoFile((await readIfExists(join(this.#layout.rawDir(d), `${id}.md`))) ?? '');
       if (parsed.ok && parsed.value.routing?.by === 'user' && parsed.value.routing.from === from) return d;
@@ -949,22 +1006,21 @@ class WikiImpl implements Wiki {
     return null;
   }
 
-  async #finishMoves(d: DomainName): Promise<void> {
+  async #finishMoves(env: Env, d: DomainName): Promise<void> {
     const ledger = await this.#ledger(d);
     for (const name of await listNames(this.#layout.rawDir(d))) {
       const id = name.endsWith('.md') && !name.endsWith('.source.md') ? parseMemoId(name.slice(0, -3)) : null;
       if (!id || ledger.history('ingest', id).terminal?.kind !== 'gave-up') continue;
-      const to = await this.#movedTo(d, id);
-      if (to) await this.#closeMove(d, to, id);
+      const to = await this.#movedTo(d, id, [...env.config.domains.keys()]);
+      if (to) await this.#closeMove(env, d, to, id);
     }
   }
 
   /** Every pending job of the domain, in pick order: answers first (no LLM, the user is waiting), then memos. */
-  async #candidates(d: DomainName, ledger: Ledger): Promise<{ jobs: Job[]; filed: string[] }> {
+  async #candidates(d: DomainName, ledger: Ledger, domains: readonly DomainName[]): Promise<{ jobs: Job[]; filed: string[] }> {
     const answers: Job[] = [];
     const filed: string[] = [];
     const answersDir = this.#layout.answersInboxDir(d);
-    const domains = await this.domains();
     for (const name of await listNames(answersDir)) {
       const id = name.endsWith('.md') ? parseAnswerId(name.slice(0, -3)) : null;
       if (!id || `${id}.md` !== name) continue;
@@ -991,15 +1047,23 @@ class WikiImpl implements Wiki {
   }
 
   async runNext(domain: DomainName, opts: { readonly withLlm?: boolean } = {}): Promise<RunReport> {
+    const read = await this.#readConfig();
+    if (!read.ok) return { kind: 'paused' };
+    const dc = read.config.domains.get(domain);
+    if (!dc) return { kind: 'idle' };
+    const env = this.#env(read.config);
+    const domains = [...read.config.domains.keys()];
     return this.#locked(this.#jobLocks, domain)(async () => {
-      await this.#recoverInflight(domain);
-      await this.#finishMoves(domain);
+      await this.#init(dc);
+      await this.#recoverInflight(env, domain);
+      await this.#finishMoves(env, domain);
       const ledger = await this.#ledger(domain);
-      const { jobs, filed } = await this.#candidates(domain, ledger);
+      const { jobs, filed } = await this.#candidates(domain, ledger, domains);
       for (const f of filed) await unlinkQuiet(f);
       const picked = jobs.find((j) => opts.withLlm !== false || !JOBS[j.kind].needsLlm);
       if (!picked) return { kind: 'idle' };
 
+      await this.#commitConfig();
       await this.#commitManual(domain, `manual(${domain})`);
       const history = ledger.history(picked.ref.kind, picked.ref.id);
       const base = (await this.#git.head())!;
@@ -1012,12 +1076,12 @@ class WikiImpl implements Wiki {
       let marker = await markerFor(picked);
       const markerFile = this.#layout.inflightFile(domain);
       await writeInflight(markerFile, marker);
-      const job = (await specOf(picked).prepare?.(this.#env, picked)) ?? picked;
+      const job = (await specOf(picked).prepare?.(env, picked)) ?? picked;
       if (job !== picked) await writeInflight(markerFile, (marker = await markerFor(job)));
 
       const cwd = this.#layout.domainDir(domain);
       const touched = new Set<string>();
-      const result = await specOf(job).perform(this.#env, job, { history, touch: (p) => touched.add(resolve(cwd, p).normalize('NFC')) });
+      const result = await specOf(job).perform(env, job, { history, touch: (p) => touched.add(resolve(cwd, p).normalize('NFC')), domain: dc });
       if (result.kind === 'unavailable') {
         await this.#rollback(domain, touched);
         await clearInflight(markerFile);
@@ -1025,17 +1089,18 @@ class WikiImpl implements Wiki {
       }
 
       await this.#git.resetPaths([this.#layout.logRel(domain), this.#layout.indexRel(domain)]);
-      const problems = result.kind === 'failed' ? [{ rule: 'llm', path: '', detail: result.reason } as const] : await this.#check(domain, touched, marker);
+      const problems = result.kind === 'failed' ? [{ rule: 'llm', path: '', detail: result.reason } as const] : await this.#check(dc, domains, touched, marker);
       const report = problems.length === 0 && result.kind === 'finished'
-        ? await this.#commitJob(domain, job, result.verdict)
-        : await this.#commitFailure(domain, job, marker.attempt, problems, touched);
+        ? await this.#commitJob(env, dc, job, result.verdict)
+        : await this.#commitFailure(env, domain, job, marker.attempt, problems, touched);
       await clearInflight(markerFile);
       if (job.kind === 'file-answer' && report.kind === 'committed') await unlinkQuiet(job.staging);
       return report;
     });
   }
 
-  async #check(d: DomainName, touched: ReadonlySet<string>, marker: InflightMarker): Promise<readonly Problem[]> {
+  async #check(dc: DomainConfig, domains: readonly DomainName[], touched: ReadonlySet<string>, marker: InflightMarker): Promise<readonly Problem[]> {
+    const d = dc.name;
     const lay = this.#layout;
     const wikiPrefix = `${lay.wikiDir(d)}${sep}`;
     const outsideWrites = [...touched].filter((p) => !p.startsWith(wikiPrefix)).map((p) => lay.toRel(p) ?? p);
@@ -1045,30 +1110,30 @@ class WikiImpl implements Wiki {
     const contents = new Map<string, string>();
     for (const c of changes) if (c.status !== 'deleted') contents.set(c.path, (await readIfExists(lay.fromRel(c.path))) ?? '');
     const names: PageNameIndex = new Map([
-      ...(await this.#namesAt('HEAD', (await this.domains()).filter((o) => o !== d))),
+      ...(await this.#namesAt('HEAD', domains.filter((o) => o !== d))),
       [d, namesOf(await listMarkdown(lay.wikiDir(d)))],
     ]);
-    const claudeMd = await fs.readFile(join(lay.domainDir(d), 'CLAUDE.md'), 'utf8');
     return check({
       domain: d,
       changes,
       contents,
       reviewAtHead: await this.#git.show('HEAD', lay.reviewRel(d)),
       names,
-      requiredFields: requiredFieldsFrom(await fs.readFile(lay.commonRules, 'utf8')),
-      allowedTypes: new Set([...pageTypesFrom(claudeMd), 'answer']),
+      allowedTypes: new Set([...dc.pageTypes.map((t) => t.type), 'answer']),
       outsideWrites,
       modifiedInputs,
     });
   }
 
-  async #commitJob(d: DomainName, job: Job, verdict: string): Promise<RunReport> {
-    await this.#writeIndex(d);
+  async #commitJob(env: Env, dc: DomainConfig, job: Job, verdict: string): Promise<RunReport> {
+    const d = dc.name;
+    await this.#writeIndex(dc);
     const prefix = `${this.#layout.wikiRel(d)}/`;
     const pages = (await this.#git.status([this.#layout.wikiRel(d)]))
       .map((c) => c.path.slice(prefix.length))
       .filter((p) => roleOf(p) === 'page' || roleOf(p) === 'answer');
     const sha = await this.#commitLedger(
+      env,
       d,
       () => ({ job: job.ref.kind, id: job.ref.id, outcome: { kind: 'applied', verdict, pages } }),
       [this.#layout.wikiRel(d), ...job.inputs],
@@ -1077,14 +1142,15 @@ class WikiImpl implements Wiki {
     return { kind: 'committed', job: job.ref, commit: sha!, verdict };
   }
 
-  async #commitFailure(d: DomainName, job: Job, attempt: number, problems: readonly Problem[], touched: ReadonlySet<string>): Promise<RunReport> {
+  async #commitFailure(env: Env, d: DomainName, job: Job, attempt: number, problems: readonly Problem[], touched: ReadonlySet<string>): Promise<RunReport> {
     await this.#rollback(d, touched);
     const max = this.#opts.maxAttempts;
     const gaveUp = attempt >= max;
     const reason = describeProblems(problems);
-    if (gaveUp) await this.#appendReview(d, [`- [${this.#env.today()}] ${job.ref.kind} \`${job.ref.id}\` 포기 ${attempt}/${max}: ${reason}`]);
+    if (gaveUp) await this.#appendReview(d, [`- [${env.today()}] ${job.ref.kind} \`${job.ref.id}\` 포기 ${attempt}/${max}: ${reason}`]);
     const outcome: LedgerOutcome = gaveUp ? { kind: 'gave-up', attempt, max, reason } : { kind: 'attempt-failed', attempt, max, reason, interrupted: false };
     await this.#commitLedger(
+      env,
       d,
       () => ({ job: job.ref.kind, id: job.ref.id, outcome }),
       [...(await this.#reviewPathIfExists(d)), ...(gaveUp ? job.inputs : [])],
@@ -1114,7 +1180,7 @@ class WikiImpl implements Wiki {
    * leftovers are discarded and the attempt counts, so a job that kills the gateway every time
    * still stops after maxAttempts.
    */
-  async #recoverInflight(d: DomainName): Promise<void> {
+  async #recoverInflight(env: Env, d: DomainName): Promise<void> {
     const file = this.#layout.inflightFile(d);
     const marker = await readInflight(file);
     if (!marker) return;
@@ -1127,17 +1193,19 @@ class WikiImpl implements Wiki {
     const max = this.#opts.maxAttempts;
     const gaveUp = marker.attempt >= max;
     const reason = INTERRUPTED;
-    if (gaveUp) await this.#appendReview(d, [`- [${this.#env.today()}] ${kind} \`${id}\` 포기 ${marker.attempt}/${max}: ${reason}`]);
+    if (gaveUp) await this.#appendReview(d, [`- [${env.today()}] ${kind} \`${id}\` 포기 ${marker.attempt}/${max}: ${reason}`]);
     const inputs: string[] = [];
     if (gaveUp) for (const p of Object.keys(marker.inputs)) if (await exists(this.#layout.fromRel(p))) inputs.push(p);
     const outcome: LedgerOutcome = gaveUp ? { kind: 'gave-up', attempt: marker.attempt, max, reason } : { kind: 'attempt-failed', attempt: marker.attempt, max, reason, interrupted: true };
-    await this.#commitLedger(d, () => ({ job: kind, id, outcome }), [...(await this.#reviewPathIfExists(d)), ...inputs], `${kind}(${d}): ${id} ${gaveUp ? '포기' : '중단'} ${marker.attempt}/${max}`);
+    await this.#commitLedger(env, d, () => ({ job: kind, id, outcome }), [...(await this.#reviewPathIfExists(d)), ...inputs], `${kind}(${d}): ${id} ${gaveUp ? '포기' : '중단'} ${marker.attempt}/${max}`);
     await clearInflight(file);
   }
 
   async retry(job: JobRef): Promise<RetryResult> {
-    if (job.kind === 'ingest' && (await this.#movedTo(job.domain, job.id as MemoId))) return { kind: 'not-failed' };
+    const env = this.#env(await this.config());
+    if (job.kind === 'ingest' && (await this.#movedTo(job.domain, job.id as MemoId, [...env.config.domains.keys()]))) return { kind: 'not-failed' };
     const sha = await this.#commitLedger(
+      env,
       job.domain,
       (head) => (head.history(job.kind, job.id).terminal?.kind === 'gave-up' ? { job: job.kind, id: job.id, outcome: { kind: 'retry' } } : null),
       [],
@@ -1148,30 +1216,39 @@ class WikiImpl implements Wiki {
 
   async status(): Promise<Status> {
     const inbox = (await listNames(this.#layout.inboxDir)).filter((n) => n.endsWith('.md')).length;
-    const held = await this.held();
+    const read = await this.#readConfig();
+    if (!read.ok) return { inbox, paused: true, problems: read.problems, domains: [] };
+    const names = [...read.config.domains.keys()];
+    const held = await this.#held(names);
     const domains: DomainStatus[] = [];
-    for (const d of await this.domains()) {
+    for (const { name: d, agentsMayRead, modelProfile } of read.config.domains.values()) {
       const ledger = await this.#ledger(d);
       const marker = await readInflight(this.#layout.inflightFile(d));
       domains.push({
         domain: d,
-        pending: (await this.#candidates(d, ledger)).jobs.length,
+        agentsMayRead,
+        modelProfile,
+        pending: (await this.#candidates(d, ledger, names)).jobs.length,
         held: held.filter((h) => h.domain === d).length,
         failed: ledger.failedCount(),
         running: marker ? { ...marker.job, since: marker.since } : null,
       });
     }
-    return { inbox, domains };
+    return { inbox, paused: false, problems: read.warnings, domains };
   }
 
   async chatContext(target: ChatTarget): Promise<ChatContext> {
-    if (target.kind === 'root') return { cwd: this.#layout.root, systemPrompt: await fs.readFile(this.#layout.rootSchema, 'utf8') };
-    const cwd = this.#layout.domainDir(target.domain);
-    return { cwd, systemPrompt: await composeSystemPrompt(join(cwd, 'CLAUDE.md')) };
+    const config = await this.config();
+    if (target.kind === 'root') {
+      return { cwd: this.#layout.root, systemPrompt: `${await fs.readFile(this.#layout.rootSchema, 'utf8')}\n\n${renderDomainCatalog(config)}` };
+    }
+    const dc = config.domains.get(target.domain);
+    if (!dc) throw new Error(`${target.domain} is no longer a domain`);
+    return { cwd: this.#layout.domainDir(dc.name), systemPrompt: `${await composeSystemPrompt(this.#layout.domainSchema(dc.name))}\n\n${renderPageTypes(dc)}` };
   }
 
   async citations(text: string, target: ChatTarget): Promise<readonly PageRef[]> {
-    const domains = await this.domains();
+    const domains = await this.#domains();
     const names = await this.#namesAt('HEAD', domains);
     const out = new Map<string, PageRef>();
     for (const link of extractWikilinks(text)) {
@@ -1190,7 +1267,7 @@ class WikiImpl implements Wiki {
       const wake = this.#layout.wakeFor(rel);
       if (!wake) return;
       if (wake.kind !== 'domain') onWake(wake);
-      else void this.parseDomain(wake.name).then((d) => d && onWake({ kind: 'domain', domain: d }), () => undefined);
+      else void this.config().then((c) => domainIn(c, wake.name)).then((d) => d && onWake({ kind: 'domain', domain: d }), () => undefined);
     });
     const stop = () => watcher.close();
     this.#unwatch.add(stop);

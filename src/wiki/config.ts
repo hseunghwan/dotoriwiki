@@ -108,7 +108,7 @@ export function parseWikiConfig(text: string, machine: MachineFacts): ConfigPars
   const locale = top.get('locale');
   if (!LOCALES.includes(locale as Locale)) add('locale', `is ${JSON.stringify(locale ?? null)}`, `use one of ${LOCALES.join(', ')}`);
   const timeZone = top.get('time_zone');
-  if (typeof timeZone !== 'string' || !validTz(timeZone)) add('time_zone', `is ${JSON.stringify(timeZone ?? null)}, not an IANA time zone`, 'use a zone such as America/Chicago or Asia/Seoul');
+  if (typeof timeZone !== 'string' || !validTz(timeZone)) add('time_zone', `is ${JSON.stringify(timeZone ?? null)}, not an IANA time zone`, 'use an IANA zone such as America/Chicago');
 
   const domains = new Map<DomainName, DomainConfig>();
   const written = new Set<string>();

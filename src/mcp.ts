@@ -11,13 +11,18 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { MemoDetailWire, MemoStateWire } from './api.ts';
-import { isoWithOffset, parseMemoId, type DomainName, type Wiki } from './wiki/index.ts';
+import { domainIn, isoWithOffset, parseMemoId, WikiConfigError, type DomainName, type Wiki, type WikiConfig } from './wiki/index.ts';
 import { acceptMemo, detailWire } from './wire.ts';
 
 export type McpDeps = { readonly wiki: Wiki; readonly now: () => Date; readonly serverVersion: string };
 
-const TZ = 'Asia/Seoul';
 const MAX_WAIT_SECONDS = 30;
+
+/** null while dotoriwiki.yaml is broken: a memo is still accepted into the inbox then. */
+const configOrNull = (wiki: Wiki): Promise<WikiConfig | null> => wiki.config().catch((e: unknown) => {
+  if (e instanceof WikiConfigError) return null;
+  throw e;
+});
 
 export type MemoStatus = Pick<MemoDetailWire, 'id' | 'state' | 'domain' | 'verdict' | 'first_page' | 'failure'>;
 
@@ -36,7 +41,7 @@ function tools(domains: readonly DomainName[]): Tool[] {
         type: 'object',
         properties: {
           text: { type: 'string', description: "The user's memo, verbatim." },
-          domain_hint: { type: 'string', enum: [...domains], description: 'Only when the user named the domain.' },
+          domain_hint: { type: 'string', ...(domains.length ? { enum: [...domains] } : {}), description: 'Only when the user named the domain.' },
           context: {
             type: 'object',
             properties: {
@@ -76,14 +81,16 @@ const toolError = (detail: string): CallToolResult => ({ content: [{ type: 'text
 
 async function writeMemo(deps: McpDeps, args: Record<string, unknown>): Promise<CallToolResult> {
   const hint = args.domain_hint;
-  if (typeof hint === 'string' && hint.trim() !== '' && !(await deps.wiki.parseDomain(hint))) {
-    return toolError(`domain_hint: one of ${(await deps.wiki.domains()).join(', ')}`);
+  const config = await configOrNull(deps.wiki);
+  if (config && typeof hint === 'string' && hint.trim() !== '' && !domainIn(config, hint)) {
+    return toolError(`domain_hint: one of ${[...config.domains.keys()].join(', ')}`);
   }
+  const tz = config?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const r = await acceptMemo(deps.wiki, {
     id: randomUUID(),
     text: args.text,
-    captured_at: isoWithOffset(deps.now(), TZ),
-    tz: TZ,
+    captured_at: isoWithOffset(deps.now(), tz),
+    tz,
     source: 'agent',
     domain_hint: hint ?? null,
     context: args.context ?? null,
@@ -112,7 +119,7 @@ async function memoStatus(deps: McpDeps, args: Record<string, unknown>, signal: 
 
 export async function handleMcp(deps: McpDeps, body: unknown, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const server = new Server({ name: 'llmwiki', version: deps.serverVersion }, { capabilities: { tools: {} } });
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools(await deps.wiki.domains()) }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools([...((await configOrNull(deps.wiki))?.domains.keys() ?? [])]) }));
   server.setRequestHandler(CallToolRequestSchema, async ({ params }, extra) => {
     const args = params.arguments ?? {};
     switch (params.name) {

@@ -2,12 +2,13 @@
  * Which model answers which call: the `models.json` shape, its parser, and the router that
  * implements the wiki's one Llm port by picking a provider per call.
  *
- * The file is optional. Each role it leaves out keeps the Claude default, so an absent file
- * runs exactly as before the file existed.
+ * The file is optional and belongs to the machine. Each role it leaves out keeps the Claude
+ * default. `edit` maps profile names to choices; a domain names its profile in dotoriwiki.yaml,
+ * so this file never names a domain.
  */
 
 import { readFileSync } from 'node:fs';
-import type { ClassifyRequest, DomainName, EditRequest, Llm } from './wiki/index.ts';
+import type { ClassifyRequest, EditRequest, Llm } from './wiki/index.ts';
 
 const EFFORTS = {
   claude: ['low', 'medium', 'high', 'xhigh', 'max'],
@@ -25,13 +26,13 @@ export type Models = {
   readonly classify: ModelChoice;
   /** Chat streams partial text and resumes sessions, which only the Claude adapter does. */
   readonly chat: ClaudeChoice;
-  readonly edit: { readonly default: ModelChoice; readonly byDomain: ReadonlyMap<DomainName, ModelChoice> };
+  readonly edit: { readonly default: ModelChoice; readonly profiles: ReadonlyMap<string, ModelChoice> };
 };
 
 export const DEFAULT_MODELS: Models = {
   classify: { provider: 'claude', model: 'haiku', effort: 'low' },
   chat: { provider: 'claude', model: 'sonnet' },
-  edit: { default: { provider: 'claude', model: 'sonnet' }, byDomain: new Map() },
+  edit: { default: { provider: 'claude', model: 'sonnet' }, profiles: new Map() },
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -55,30 +56,25 @@ function parseChoice(v: unknown, at: string): ModelChoice {
   return { provider, model, ...(effort === undefined ? {} : { effort }) } as ModelChoice;
 }
 
-/** Throws a message naming the bad entry; `domains` are the wiki's domain folders. */
-export function parseModels(raw: unknown, domains: readonly DomainName[]): Models {
+/** Throws a message naming the bad entry. */
+export function parseModels(raw: unknown): Models {
   if (!isObj(raw)) throw new Error('models.json: expected an object');
   onlyKeys(raw, ['classify', 'chat', 'edit'], 'models.json');
   const classify = raw.classify === undefined ? DEFAULT_MODELS.classify : parseChoice(raw.classify, 'classify');
   const chat = raw.chat === undefined ? DEFAULT_MODELS.chat : parseChoice(raw.chat, 'chat');
   if (chat.provider !== 'claude') throw new Error('chat: only the claude provider can run chat');
-  if (raw.edit !== undefined && !isObj(raw.edit)) throw new Error('edit: expected {"default"?, "<domain>"?...}');
-  let editDefault = DEFAULT_MODELS.edit.default;
-  const byDomain = new Map<DomainName, ModelChoice>();
-  for (const [key, value] of Object.entries(raw.edit ?? {})) {
-    if (key === 'default') {
-      editDefault = parseChoice(value, 'edit.default');
-      continue;
-    }
-    const domain = domains.find((d) => d === key.normalize('NFC'));
-    if (!domain) throw new Error(`edit."${key}": no such domain (have ${domains.join(', ')})`);
-    byDomain.set(domain, parseChoice(value, `edit."${key}"`));
-  }
-  return { classify, chat, edit: { default: editDefault, byDomain } };
+  if (raw.edit === undefined) return { classify, chat, edit: DEFAULT_MODELS.edit };
+  if (!isObj(raw.edit) || raw.edit.default === undefined) throw new Error('edit: expected {"default", "<profile>"?...}');
+  const profiles = new Map<string, ModelChoice>();
+  for (const [key, value] of Object.entries(raw.edit)) if (key !== 'default') profiles.set(key.normalize('NFC'), parseChoice(value, `edit."${key}"`));
+  return { classify, chat, edit: { default: parseChoice(raw.edit.default, 'edit.default'), profiles } };
 }
 
+/** The profile names a domain's model_profile may use. */
+export const profileNames = (m: Models) => ['default', ...m.edit.profiles.keys()];
+
 /** An absent file means the defaults; an unreadable or invalid one throws. */
-export function loadModels(path: string, domains: readonly DomainName[]): Models {
+export function loadModels(path: string): Models {
   let text: string;
   try {
     text = readFileSync(path, 'utf8');
@@ -93,7 +89,7 @@ export function loadModels(path: string, domains: readonly DomainName[]): Models
     throw new Error(`${path}: ${(e as Error).message}`);
   }
   try {
-    return parseModels(raw, domains);
+    return parseModels(raw);
   } catch (e) {
     throw new Error(`${path}: ${(e as Error).message}`);
   }
@@ -103,10 +99,10 @@ export function loadModels(path: string, domains: readonly DomainName[]): Models
 export function routeLlm(models: Models, llmFor: (choice: ModelChoice) => Llm): Llm {
   const classifier = llmFor(models.classify);
   const editDefault = llmFor(models.edit.default);
-  const editors = new Map([...models.edit.byDomain].map(([d, c]) => [d, llmFor(c)] as const));
+  const editors = new Map([...models.edit.profiles].map(([p, c]) => [p, llmFor(c)] as const));
   return {
     classify: (req: ClassifyRequest) => classifier.classify(req),
-    edit: (req: EditRequest) => (editors.get(req.domain) ?? editDefault).edit(req),
+    edit: (req: EditRequest) => (editors.get(req.modelProfile ?? 'default') ?? editDefault).edit(req),
   };
 }
 

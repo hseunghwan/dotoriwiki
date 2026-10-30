@@ -3,17 +3,18 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import {
   openWiki, parseMemo, type ClassifyRequest, type Classification, type EditRequest, type EditResult, type FetchedSource, type FetchSource,
   type Llm, type Memo, type Unavailable, type Wiki, type WikiOptions,
 } from '../src/wiki/index.ts';
 
-const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixture', 'wiki');
+const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixture');
 
-/** A fresh git work tree holding a copy of the fixture wiki, with no commits. */
-export async function tempWiki(): Promise<string> {
+/** A fresh git work tree holding a copy of a fixture wiki, with no commits: `ko` (test/fixture/wiki) or `en` (test/fixture/wiki-en). */
+export async function tempWiki(fixture: 'ko' | 'en' = 'ko'): Promise<string> {
   const root = await fs.mkdtemp(join(process.env.LLMWIKI_TEST_TMP ?? tmpdir(), 'llmwiki-test-'));
-  await fs.cp(FIXTURE, root, { recursive: true });
+  await fs.cp(join(FIXTURES, fixture === 'ko' ? 'wiki' : 'wiki-en'), root, { recursive: true });
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
   return root;
 }
@@ -93,16 +94,21 @@ export const options = (llm: Llm, extra: Partial<WikiOptions> = {}): WikiOptions
   fetchSource: noFetch,
   maxAttempts: 3,
   reviewBelowConfidence: 0.6,
-  fallbackDomain: '일상',
   ingestTimeoutMs: 5_000,
   committer: { name: 'llmwiki-test', email: 'test@localhost' },
-  tz: 'Asia/Seoul',
+  modelProfiles: ['default'],
   now: () => new Date('2026-10-29T00:00:00Z'),
   ...extra,
 });
 
 export async function open(root: string, llm: Llm, extra: Partial<WikiOptions> = {}): Promise<Wiki> {
   return openWiki(root, options(llm, extra));
+}
+
+/** Rewrites dotoriwiki.yaml through a plain-object edit, as a user would by hand. */
+export async function editConfig(root: string, change: (c: Record<string, unknown>) => Record<string, unknown>): Promise<void> {
+  const file = join(root, 'dotoriwiki.yaml');
+  await fs.writeFile(file, stringifyYaml(change(parseYaml(await fs.readFile(file, 'utf8')) as Record<string, unknown>)));
 }
 
 export const ulid = (n: number) => `01JB8ZQ4M3T9X7K2W5R6N8P${String(n).padStart(3, '0')}`;

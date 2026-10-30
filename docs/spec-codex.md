@@ -2,6 +2,8 @@
 
 The user wants routing (classify) and 개발소식지식베이스 ingest on Codex. Everything else stays on Claude.
 
+Since P1 (`docs/design/wiki-config.md`), an `edit` key other than `default` is a model profile. A domain picks one with `model_profile` in `dotoriwiki.yaml`, so a key named after a domain keeps working once that domain names it, and `EditRequest` carries the profile instead of the domain.
+
 ## Config: one file, parsed at startup
 
 `~/.config/llmwiki/models.json`. Optional: when it is absent, the current Claude defaults apply.

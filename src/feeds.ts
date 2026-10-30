@@ -1,18 +1,16 @@
 /**
- * The feed collector: a table of news sources, each turned into memos for 개발소식지식베이스.
- * It keeps no state. Each poll reads a recent window, and the id of an item is a hash of its
+ * The feed collector: a table of news sources, each turned into memos for the domain the wiki's
+ * `feeds` names. A feed the wiki does not name is not collected. It keeps no state. Each poll reads a recent window, and the id of an item is a hash of its
  * feed and key, so `wiki.accept` dedup is what stops an item from being collected twice.
  */
 
 import { createHash } from 'node:crypto';
 import { decodeEntities, DESKTOP_UA } from './enrich.ts';
-import { isoWithOffset, parseMemo, type AcceptResult, type Memo } from './wiki/index.ts';
+import { isoWithOffset, parseMemo, type AcceptResult, type FeedName, type Memo, type WikiConfig } from './wiki/index.ts';
 
 const HOUR = 3_600_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const SUMMARY_MAX_CHARS = 8_000;
-const TZ = 'Asia/Seoul';
-const DOMAIN_HINT = '개발소식지식베이스';
 
 export type FeedItem = {
   /** Stable for the life of the item; the memo id is derived from it. */
@@ -39,8 +37,6 @@ export type Feed = {
   readonly linkFromDiscussion?: (html: string) => string | null;
 };
 
-export type FeedName = 'geeknews' | 'hackernews' | 'ghsa';
-
 
 const cdata = (s: string) => {
   const m = /^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/.exec(s);
@@ -62,7 +58,6 @@ export function htmlToText(html: string): string {
     .split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
 }
 
-const day = (d: Date) => isoWithOffset(d, TZ).slice(0, 10);
 const capText = (s: string) => (s.length <= SUMMARY_MAX_CHARS ? s : `${s.slice(0, SUMMARY_MAX_CHARS).trimEnd()}\n[…]`);
 
 function geeknews(o: { windowMs: number; cap: number }): Feed {
@@ -177,11 +172,11 @@ export function feedMemoId(feed: string, key: string): string {
   return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
 }
 
-export function renderFeedMemo(label: string, item: FeedItem): string {
+export function renderFeedMemo(label: string, item: FeedItem, timeZone: string): string {
   const head = [
     `[${label}] ${item.title}`,
     ...(item.link ? [`원문: ${item.link}`] : []),
-    `게시: ${day(item.publishedAt)}`,
+    `게시: ${isoWithOffset(item.publishedAt, timeZone).slice(0, 10)}`,
     ...(item.discussion ? [`토론: ${item.discussion}`] : []),
     ...item.extra.map(([k, v]) => `${k}: ${v}`),
   ];
@@ -214,7 +209,10 @@ async function get(http: typeof fetch, url: string): Promise<string> {
   return res.text();
 }
 
-async function pollFeed(name: string, feed: Feed, ports: CollectPorts): Promise<FeedReport> {
+/** Where each feed's memos go and the zone they are stamped in: the wiki's `feeds` and `time_zone`. */
+export type FeedPlan = Pick<WikiConfig, 'feeds' | 'timeZone'>;
+
+async function pollFeed(name: FeedName, feed: Feed, domain: string, timeZone: string, ports: CollectPorts): Promise<FeedReport> {
   const now = ports.now();
   const items: FeedItem[] = [];
   for (const url of feed.urls(now)) items.push(...feed.parse(await get(ports.http, url)));
@@ -233,11 +231,11 @@ async function pollFeed(name: string, feed: Feed, ports: CollectPorts): Promise<
     }
     const memo = parseMemo({
       id: feedMemoId(name, item.key),
-      text: renderFeedMemo(feed.label, { ...item, link }),
-      captured_at: isoWithOffset(item.publishedAt, TZ),
-      tz: TZ,
+      text: renderFeedMemo(feed.label, { ...item, link }, timeZone),
+      captured_at: isoWithOffset(item.publishedAt, timeZone),
+      tz: timeZone,
       source: 'feed',
-      domain_hint: DOMAIN_HINT,
+      domain_hint: domain,
     });
     if (!memo.ok) {
       skipped.push(`${item.key}: ${memo.detail}`);
@@ -249,11 +247,11 @@ async function pollFeed(name: string, feed: Feed, ports: CollectPorts): Promise<
   return { kind: 'polled', feed: name, created, duplicate, skipped };
 }
 
-/** Feeds run side by side; one that throws or times out is reported and never stops the rest. */
-export function pollFeeds(feeds: Readonly<Record<string, Feed>>, ports: CollectPorts): Promise<readonly FeedReport[]> {
+/** The feeds the plan names, side by side; one that throws or times out is reported and never stops the rest. */
+export function pollFeeds(feeds: { readonly [N in FeedName]?: Feed }, plan: FeedPlan, ports: CollectPorts): Promise<readonly FeedReport[]> {
   return Promise.all(
-    Object.entries(feeds).map(([name, feed]) =>
-      pollFeed(name, feed, ports).catch((e: unknown): FeedReport => ({ kind: 'failed', feed: name, reason: (e as Error).name === 'TimeoutError' ? 'timed out' : (e as Error).message })),
+    [...plan.feeds].flatMap(([name, { domain }]) => (feeds[name] ? [[name, feeds[name], domain] as const] : [])).map(([name, feed, domain]) =>
+      pollFeed(name, feed, domain, plan.timeZone, ports).catch((e: unknown): FeedReport => ({ kind: 'failed', feed: name, reason: (e as Error).name === 'TimeoutError' ? 'timed out' : (e as Error).message })),
     ),
   );
 }

@@ -70,9 +70,9 @@ test('write_memo rejects an unknown domain_hint and a bad context as tool errors
   const s = await serve();
   const { tools } = await s.client.listTools();
   assert.deepEqual(tools.map((t) => t.name), ['write_memo', 'memo_status']);
-  assert.match(tools[0]!.description!, /one of: 미루기 아카이빙, 스터디, 일상\./, 'the domain list comes from the wiki');
+  assert.match(tools[0]!.description!, /one of: 일상, 스터디, 미루기 아카이빙\./, 'the domain list comes from the wiki');
 
-  assert.deepEqual(await s.call('write_memo', { text: '메모', domain_hint: '개발소식' }), { error: 'domain_hint: one of 미루기 아카이빙, 스터디, 일상' });
+  assert.deepEqual(await s.call('write_memo', { text: '메모', domain_hint: '개발소식' }), { error: 'domain_hint: one of 일상, 스터디, 미루기 아카이빙' });
   assert.deepEqual(await s.call('write_memo', { text: '메모', context: { project: 'x' } }), { error: 'context.cwd: required' });
   assert.deepEqual(await s.call('write_memo', { text: '  ' }), { error: 'text: required' });
   assert.deepEqual(await listDir(join(s.root, 'inbox')), []);

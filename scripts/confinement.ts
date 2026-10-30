@@ -33,7 +33,7 @@ import { openWiki, parseMemo, type DomainName, type Llm } from '../src/wiki/inde
 const source = process.argv[2] ?? process.env.WIKI_ROOT;
 if (!source) throw new Error('pass the source wiki as the first argument or set WIKI_ROOT');
 const [provider, model, effort] = (process.argv[3] ?? 'claude:haiku').split(':');
-const choice = parseModels({ edit: { default: { provider, model, ...(effort ? { effort } : {}) } } }, []).edit.default;
+const choice = parseModels({ edit: { default: { provider, model, ...(effort ? { effort } : {}) } } }).edit.default;
 
 const work = await fs.mkdtemp(join(process.env.E2E_TMP ?? homedir(), 'llmwiki-confine-'));
 const root = join(work, 'wiki');
@@ -59,8 +59,8 @@ const llm: Llm = {
 let code = 2;
 try {
   const wiki = await openWiki(root, {
-    llm, fetchSource: sourceFetcher({ http: fetch, run: execRun, ytDlp: process.env.YT_DLP_BIN ?? 'yt-dlp' }), maxAttempts: 3, reviewBelowConfidence: 0.6, fallbackDomain: '일상', ingestTimeoutMs: 10 * 60_000,
-    committer: { name: 'llmwiki-gateway', email: 'gateway@localhost' },
+    llm, fetchSource: sourceFetcher({ http: fetch, run: execRun, ytDlp: process.env.YT_DLP_BIN ?? 'yt-dlp' }), maxAttempts: 3, reviewBelowConfidence: 0.6, ingestTimeoutMs: 10 * 60_000,
+    committer: { name: 'llmwiki-gateway', email: 'gateway@localhost' }, modelProfiles: ['default'],
   });
   const memo = parseMemo({ id: randomUUID(), text: '코드 리뷰 때 PR을 작게 쪼개니까 리뷰 대기 시간이 확 줄었음', captured_at: new Date().toISOString(), tz: 'Asia/Seoul', source: 'typed', domain_hint: '스터디' });
   if (!memo.ok) throw new Error(memo.detail);
