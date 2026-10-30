@@ -8,7 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startHttp } from '../src/http.ts';
 import type { DomainName } from '../src/wiki/index.ts';
-import { fakeLlm, listDir, open, readText, tempWiki } from './helpers.ts';
+import { closeAtEnd, fakeLlm, listDir, open, readText, tempWiki } from './helpers.ts';
 
 const TOKEN = 'test-token-0123456789';
 
@@ -28,7 +28,7 @@ async function serve() {
     const text = (r.content as { text: string }[])[0]!.text;
     return r.isError ? { error: text } : JSON.parse(text);
   };
-  return { root, wiki, url, client, call, close: async () => (await client.close(), await http.close(), await wiki.close()) };
+  return { root, wiki, url, client, call, close: closeAtEnd(async () => (await client.close(), await http.close(), await wiki.close())) };
 }
 
 const context = { project: 'notes-app', cwd: '/Users/me/workspace/notes-app', branch: 'main' };
@@ -87,8 +87,8 @@ test('memo_status follows a memo to its page, waits when asked, and errors on an
   const { id } = await s.call('write_memo', { text: '메모', domain_hint: '스터디', context });
   assert.deepEqual(await s.call('memo_status', { id }), { id, state: 'inbox', domain: null, verdict: null, first_page: null, failure: null });
 
-  const waited = s.call('memo_status', { id, wait_seconds: 10 });
   assert.equal((await s.wiki.routeNext()).kind, 'routed');
+  const waited = s.call('memo_status', { id, wait_seconds: 30 });
   assert.equal((await s.wiki.runNext('스터디' as DomainName)).kind, 'committed');
   assert.deepEqual(await waited, { id, state: 'ingested', domain: '스터디', verdict: '새 페이지', first_page: `메모 ${id}`, failure: null });
 

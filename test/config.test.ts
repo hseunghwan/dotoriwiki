@@ -8,7 +8,7 @@ import { openChatStore } from '../src/chats.ts';
 import { startHttp } from '../src/http.ts';
 import { parseModels, profileNames, routeLlm } from '../src/models.ts';
 import { parseWikiConfig, WikiConfigError, type ConfigParse, type DomainName, type WikiOptions } from '../src/wiki/index.ts';
-import { commitSubjects, editConfig, fakeLlm, headFile, memo, open, readText, tempWiki, ulid } from './helpers.ts';
+import { closeAtEnd, commitSubjects, editConfig, fakeLlm, headFile, memo, open, readText, tempWiki, ulid } from './helpers.ts';
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), 'fixture');
 const en = readFileSync(join(FIX, 'wiki-en', 'dotoriwiki.yaml'), 'utf8');
@@ -98,7 +98,7 @@ async function serve(root: string, llm = fakeLlm(), extra: Partial<WikiOptions> 
     });
     return { status: res.status, body: (await res.json()) as Record<string, unknown> };
   };
-  return { wiki, call, close: async () => (await http.close(), await wiki.close()) };
+  return { wiki, call, close: closeAtEnd(async () => (await http.close(), await wiki.close())) };
 }
 
 const memoBody = (n: number, text: string) => ({ id: ulid(n), text, captured_at: '2026-10-29T08:10:00-05:00', tz: 'America/Chicago', source: 'typed' });

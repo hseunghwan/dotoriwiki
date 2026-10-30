@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { after } from 'node:test';
 import { openChatStore } from '../src/chats.ts';
 import { startHttp, type HttpDeps } from '../src/http.ts';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
@@ -142,6 +143,21 @@ export const listDir = (path: string) => fs.readdir(path).then((n) => n.filter((
 
 export const TOKEN = 'test-token-0123456789';
 
+const unclosed = new Set<() => Promise<void>>();
+// A test that fails before its own close() would leave the server up and the file would never exit.
+after(async () => {
+  for (const close of unclosed) await close();
+});
+
+/** `close`, also run after the file's last test if the test that opened it did not. */
+export function closeAtEnd(close: () => Promise<void>): () => Promise<void> {
+  const once = async () => {
+    if (unclosed.delete(once)) await close();
+  };
+  unclosed.add(once);
+  return once;
+}
+
 /** A gateway on a fresh fixture wiki and an empty chat store, with a `call` that parses JSON replies. */
 export async function serveHttp(opts: { chat?: HttpDeps['chat']; now?: () => Date } = {}) {
   const root = await tempWiki();
@@ -165,5 +181,5 @@ export async function serveHttp(opts: { chat?: HttpDeps['chat']; now?: () => Dat
     const text = await res.text();
     return { status: res.status, body: res.headers.get('content-type')?.startsWith('application/json') ? JSON.parse(text) : text };
   };
-  return { root, chatsDir, base, wiki, llm, call, close: async () => (await http.close(), await wiki.close()) };
+  return { root, chatsDir, base, wiki, llm, call, close: closeAtEnd(async () => (await http.close(), await wiki.close())) };
 }
