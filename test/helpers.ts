@@ -8,7 +8,7 @@ import { startHttp, type HttpDeps } from '../src/http.ts';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import {
   openWiki, parseMemo, type ClassifyRequest, type Classification, type EditRequest, type EditResult, type FetchedSource, type FetchSource,
-  type Llm, type Memo, type Unavailable, type Wiki, type WikiOptions,
+  type Llm, type NewMemo, type ShrinkPhoto, type Unavailable, type Wiki, type WikiOptions,
 } from '../src/wiki/index.ts';
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixture');
@@ -87,6 +87,11 @@ export function fakeFetch(): FakeFetch {
   return f;
 }
 
+/** Stands in for sips: the copy is the original's bytes, so tests read the same EXIF from both. */
+export const copyShrink: ShrinkPhoto = async (src, dst) => {
+  await fs.copyFile(src, dst);
+};
+
 const noFetch: FetchSource = async (url) => {
   throw new Error(`unexpected fetch of ${url}`);
 };
@@ -94,6 +99,7 @@ const noFetch: FetchSource = async (url) => {
 export const options = (llm: Llm, extra: Partial<WikiOptions> = {}): WikiOptions => ({
   llm,
   fetchSource: noFetch,
+  shrinkPhoto: copyShrink,
   maxAttempts: 3,
   reviewBelowConfidence: 0.6,
   ingestTimeoutMs: 5_000,
@@ -115,7 +121,7 @@ export async function editConfig(root: string, change: (c: Record<string, unknow
 
 export const ulid = (n: number) => `01JB8ZQ4M3T9X7K2W5R6N8P${String(n).padStart(3, '0')}`;
 
-export function memo(n: number, text = `메모 ${n}`, extra: Record<string, unknown> = {}): Memo {
+export function memo(n: number, text = `메모 ${n}`, extra: Record<string, unknown> = {}): NewMemo {
   const r = parseMemo({ id: ulid(n), text, captured_at: `2026-10-29T08:${String(n % 60).padStart(2, '0')}:00+09:00`, tz: 'Asia/Seoul', source: 'typed', ...extra });
   if (!r.ok) throw new Error(r.detail);
   return r.value;

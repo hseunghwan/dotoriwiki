@@ -12,12 +12,14 @@
  *      ├────→ models.ts ─→ wiki/index.ts (types only)  models.json, the router that implements Llm
  *      ├────→ claude.ts ─→ cli-run.ts, models.ts, wiki/index.ts (types only)
  *      ├────→ codex.ts ──→ cli-run.ts, models.ts, wiki/index.ts (types only)
- *      └────→ enrich.ts ─→ wiki/index.ts (types only: implements FetchSource)
+ *      ├────→ enrich.ts ─→ wiki/index.ts (types only: implements FetchSource)
+ *      └────→ shrink.ts ─→ enrich.ts (Run), wiki/index.ts (types only: implements ShrinkPhoto with sips)
  *
  *   wiki/index.ts ─→ wiki/config.ts   dotoriwiki.yaml → WikiConfig, prompt catalogs (pure)
  *                 ─→ wiki/ledger.ts   log.md line format → JobHistory     (pure)
  *                 ─→ wiki/pages.ts    file formats, page fields, checks, index (pure)
  *                 ─→ wiki/sources.ts  raw/<id>.source.md format, which links get fetched (pure)
+ *                 ─→ wiki/photos.ts   photo EXIF → frontmatter, embeds, type sniffing (pure but for parsing bytes)
  *                 ─→ wiki/layout.ts   paths, atomic writes, marker, lock, prompt composition
  *                 ─→ wiki/git.ts      execFile git behind one mutex
  *   api.ts        wire types, no imports, shared with the Expo app
@@ -35,6 +37,7 @@ import { chatTurn } from './chat.ts';
 import { openChatStore } from './chats.ts';
 import { codexCli } from './codex.ts';
 import { execRun, sourceFetcher } from './enrich.ts';
+import { sipsShrink } from './shrink.ts';
 import { FEEDS, pollFeeds } from './feeds.ts';
 import { startHttp } from './http.ts';
 import { startLoops } from './loops.ts';
@@ -96,6 +99,7 @@ async function main(): Promise<void> {
   const wiki = await openWiki(cfg.wikiRoot, {
     llm,
     fetchSource: sourceFetcher({ http: fetch, run: execRun, ytDlp: cfg.ytDlpBin }),
+    shrinkPhoto: sipsShrink(execRun),
     maxAttempts: 3,
     reviewBelowConfidence: 0.6,
     ingestTimeoutMs: 10 * 60_000,

@@ -6,7 +6,7 @@
 
 import { createHash } from 'node:crypto';
 import { decodeEntities, DESKTOP_UA } from './enrich.ts';
-import { isoWithOffset, parseMemo, type AcceptResult, type FeedName, type Memo, type WikiConfig } from './wiki/index.ts';
+import { isoWithOffset, parseMemo, type AcceptResult, type FeedName, type NewMemo, type WikiConfig } from './wiki/index.ts';
 
 const HOUR = 3_600_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -192,7 +192,7 @@ export function recent(items: readonly FeedItem[], now: Date, windowMs: number, 
 
 export type CollectPorts = {
   readonly http: typeof fetch;
-  readonly accept: (memo: Memo) => Promise<AcceptResult>;
+  readonly accept: (memo: NewMemo) => Promise<AcceptResult>;
   readonly now: () => Date;
 };
 

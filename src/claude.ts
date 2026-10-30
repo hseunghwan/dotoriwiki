@@ -9,6 +9,7 @@
  */
 
 import { tmpdir } from 'node:os';
+import { dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 import { cliRunner, isObj, type Finished, type Json } from './cli-run.ts';
 import { classifySchema, editSchema, type ClaudeChoice } from './models.ts';
@@ -50,11 +51,15 @@ export function classifyArgv(req: ClassifyRequest, choice: ClaudeChoice): readon
 /**
  * Path-scoped allow rules, not acceptEdits: acceptEdits let a model write ../escape.md outside
  * cwd, while `Write(./wiki/**)` with no prompt surface denies it and reports the denial.
+ * --safe-mode confines Read to the working directories, so the photos' folder is added; writes
+ * there are still denied by the allow rules.
  */
 export function editArgv(req: EditRequest, choice: ClaudeChoice): readonly string[] {
   const scope = `./${req.writableDir}/**`;
+  const photoDirs = [...new Set(req.images.map((p) => dirname(p)))];
   return [
     ...COMMON, ...modelArgs(choice), '--tools', 'Read,Edit,Write,Glob,Grep',
+    ...photoDirs.flatMap((d) => ['--add-dir', d]),
     '--allowedTools', 'Read', 'Glob', 'Grep', `Edit(${scope})`, `Write(${scope})`,
     '--no-session-persistence', '--append-system-prompt', req.systemPrompt,
     '--output-format', 'stream-json', '--verbose', '--json-schema', JSON.stringify(editSchema(req.verdicts)),

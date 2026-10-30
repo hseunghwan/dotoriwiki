@@ -31,6 +31,10 @@ export type Layout = {
   wikiDir(d: DomainName): string;
   inflightFile(d: DomainName): string;
   readonly inflightDir: string;
+  /** Photos as uploaded. Not in git. */
+  readonly originalsDir: string;
+  /** The 2048 px copies pages embed. */
+  readonly attachmentsDir: string;
   readonly lockFile: string;
   readonly rootSchema: string;
   /** Repo-relative paths, as git prints them. */
@@ -39,6 +43,7 @@ export type Layout = {
   indexRel(d: DomainName): string;
   reviewRel(d: DomainName): string;
   rawRel(d: DomainName, name: string): string;
+  attachmentRel(name: string): string;
   /** Absolute path → repo-relative NFC path, or null when it is outside the root. */
   toRel(absPath: string): string | null;
   fromRel(rel: string): string;
@@ -65,6 +70,8 @@ export function layout(rootIn: string): Layout {
     wikiDir: (d) => join(root, d, 'wiki'),
     inflightFile: (d) => join(gateway, 'inflight', `${d}.json`),
     inflightDir: join(gateway, 'inflight'),
+    originalsDir: join(root, '_originals'),
+    attachmentsDir: join(root, '_attachments'),
     lockFile: join(gateway, 'lock'),
     rootSchema: join(root, 'CLAUDE.md'),
     wikiRel: (d) => `${d}/wiki`,
@@ -72,6 +79,7 @@ export function layout(rootIn: string): Layout {
     indexRel: (d) => `${d}/wiki/index.md`,
     reviewRel: (d) => `${d}/wiki/_review.md`,
     rawRel: (d, name) => `${d}/raw/${name}`,
+    attachmentRel: (name) => `_attachments/${name}`,
     toRel(absPath) {
       const rel = relative(root, nfc(resolve(root, absPath)));
       const posix = rel.split(sep).join('/');
@@ -150,12 +158,12 @@ async function fsyncDir(dir: string): Promise<void> {
   }
 }
 
-async function writeTmp(dir: string, name: string, content: string): Promise<string> {
+async function writeTmp(dir: string, name: string, content: string | Uint8Array): Promise<string> {
   await fs.mkdir(dir, { recursive: true });
   const tmp = join(dir, `.tmp-${name}-${randomBytes(6).toString('hex')}`);
   const h = await fs.open(tmp, 'wx');
   try {
-    await h.writeFile(content, 'utf8');
+    await (typeof content === 'string' ? h.writeFile(content, 'utf8') : h.writeFile(content));
     await h.sync();
   } finally {
     await h.close();
@@ -181,7 +189,7 @@ export async function linkExclusive(src: string, dir: string, name: string): Pro
  * name (EEXIST → 'exists'), unlink the tmp file, fsync the directory. A crash leaves at most
  * an orphan `.tmp-*`, which openWiki sweeps.
  */
-export async function writeExclusive(dir: string, name: string, content: string): Promise<'created' | 'exists'> {
+export async function writeExclusive(dir: string, name: string, content: string | Uint8Array): Promise<'created' | 'exists'> {
   const tmp = await writeTmp(dir, name, content);
   try {
     return await linkExclusive(tmp, dir, name);

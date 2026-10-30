@@ -7,7 +7,8 @@
  */
 
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import type { AnswerFiling, AnswerId, DomainName, GeoPoint, Memo, MemoContext, MemoId, MemoSource, PageRef, Routing } from './index.ts';
+import type { AnswerFiling, AnswerId, DomainName, GeoPoint, Memo, MemoContext, MemoId, MemoSource, NewMemo, PageRef, Routing } from './index.ts';
+import { isImageLink, parseAttachmentRequests, parseAttachments, renderAttachment, withEmbeds, withoutEmbeds } from './photos.ts';
 
 export type Parsed<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly detail: string };
 const bad = (detail: string): { ok: false; detail: string } => ({ ok: false, detail });
@@ -81,15 +82,27 @@ export function validTz(tz: string): boolean {
 }
 
 /**
- * The memo shape of 공통규칙 "원본 메모 frontmatter", with `text` as a field. The HTTP body and the
- * inbox file share it, so outside producers and the API are validated by the same code.
+ * A memo as sent: the HTTP body, an MCP call, or a feed item. Photos are named by number here; the
+ * gateway reads them from the uploaded originals at accept.
  */
-export function parseMemo(input: unknown): Parsed<Memo> {
+export function parseMemo(input: unknown): Parsed<NewMemo> {
   if (!isRecord(input)) return bad('body: expected a JSON object');
+  const attachments = parseAttachmentRequests(input.attachments);
+  if (!attachments.ok) return attachments;
+  const fields = memoFields(input, attachments.value.length > 0);
+  return fields.ok ? { ok: true, value: { ...fields.value, attachments: attachments.value } } : fields;
+}
+
+/**
+ * The fields of 공통규칙 "원본 메모 frontmatter" other than attachments, with `text` as a field.
+ * The HTTP body and the memo files share it, so outside producers and the API are validated by the
+ * same code. `text` may be empty only when photos carry the memo.
+ */
+function memoFields(input: Record<string, unknown>, hasPhotos: boolean): Parsed<Omit<Memo, 'attachments'>> {
   const id = typeof input.id === 'string' ? parseMemoId(input.id) : null;
   if (!id) return bad('id: expected a ULID or UUID');
   const { text, captured_at, tz, location, source, domain_hint, context } = input;
-  if (typeof text !== 'string' || text.trim() === '') return bad('text: required');
+  if (typeof text !== 'string' || (text.trim() === '' && !hasPhotos)) return bad('text: required');
   if (Buffer.byteLength(text) > 64 * 1024) return bad('text: over 64 KiB');
   if (typeof captured_at !== 'string' || !ISO_WITH_OFFSET.test(captured_at) || Number.isNaN(Date.parse(captured_at))) {
     return bad('captured_at: needs ISO-8601 with an offset');
@@ -131,7 +144,7 @@ function parseRouting(v: unknown): Routing | null {
   return null;
 }
 
-/** inbox/<id>.md and <d>/raw/<id>.md. Body is the memo text, kept byte for byte. */
+/** inbox/<id>.md and <d>/raw/<id>.md. Body is the memo text, kept byte for byte, then the photo embeds. */
 export function renderMemoFile(memo: Memo, routing: Routing | null): string {
   return withFrontmatter(
     {
@@ -142,17 +155,21 @@ export function renderMemoFile(memo: Memo, routing: Routing | null): string {
       source: memo.source,
       domain_hint: memo.domainHint,
       ...(memo.context ? { context: memo.context } : {}),
+      ...(memo.attachments.length ? { attachments: memo.attachments.map(renderAttachment) } : {}),
       ...(routing ? { routing } : {}),
     },
-    `${memo.text}\n`,
+    `${withEmbeds(memo.text, memo.attachments)}\n`,
   );
 }
 
 export function parseMemoFile(text: string): Parsed<{ memo: Memo; routing: Routing | null }> {
   const { data, body, error } = splitFrontmatter(text);
   if (!data) return bad(error ?? 'no frontmatter');
-  const memo = parseMemo({ ...data, text: body.endsWith('\n') ? body.slice(0, -1) : body });
-  return memo.ok ? { ok: true, value: { memo: memo.value, routing: parseRouting(data.routing) } } : memo;
+  const attachments = parseAttachments(data.attachments);
+  if (!attachments.ok) return attachments;
+  const memoText = withoutEmbeds(body.endsWith('\n') ? body.slice(0, -1) : body, attachments.value);
+  const fields = memoFields({ ...data, text: memoText }, attachments.value.length > 0);
+  return fields.ok ? { ok: true, value: { memo: { ...fields.value, attachments: attachments.value }, routing: parseRouting(data.routing) } } : fields;
 }
 
 
@@ -316,6 +333,8 @@ export type CheckInput = {
   readonly allowedTypes: ReadonlySet<string>;
   readonly outsideWrites: readonly string[];
   readonly modifiedInputs: readonly string[];
+  /** File names in _attachments/: the only images a page may embed. */
+  readonly attachments: ReadonlySet<string>;
 };
 
 const missing = (v: unknown) => v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
@@ -354,7 +373,9 @@ export function check(input: CheckInput): readonly Problem[] {
     }
     if (body.trim() === '') add('empty', change.path, 'page has no body');
     for (const target of extractWikilinks(text)) {
-      if (!linkResolves(target, input.domain, input.names)) add('broken-link', change.path, `[[${target}]] does not resolve`);
+      if (isImageLink(target) ? !input.attachments.has(target) : !linkResolves(target, input.domain, input.names)) {
+        add('broken-link', change.path, `[[${target}]] does not resolve`);
+      }
     }
   }
   return problems;

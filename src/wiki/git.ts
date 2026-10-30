@@ -26,6 +26,8 @@ export type Git = {
   resetPaths(paths: readonly string[]): Promise<void>;
   /** Stages and commits exactly these paths, leaving anything else staged untouched. Returns the sha. */
   commit(paths: readonly string[], message: string): Promise<string>;
+  /** Whether .gitignore rules exclude the path. */
+  ignored(path: string): Promise<boolean>;
   /** Removes .git/index.lock. Only safe while holding the gateway lock, when no git of ours can be running. */
   clearIndexLock(): Promise<void>;
 };
@@ -42,11 +44,12 @@ export function openGit(root: string, committer: Committer): Git {
     return run;
   };
 
-  const raw = (args: readonly string[], okCodes: readonly number[] = [0]) =>
+  // check-ignore takes paths, not pathspecs, and refuses --literal-pathspecs.
+  const raw = (args: readonly string[], okCodes: readonly number[] = [0], literal = true) =>
     new Promise<{ code: number; stdout: string; stderr: string }>((res, rej) => {
       execFile(
         'git',
-        ['--literal-pathspecs', '-c', 'core.quotepath=false', '-c', 'core.precomposeunicode=true', ...args],
+        [...(literal ? ['--literal-pathspecs'] : []), '-c', 'core.quotepath=false', '-c', 'core.precomposeunicode=true', ...args],
         { cwd: root, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' } },
         (err, stdout, stderr) => {
           const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0;
@@ -135,6 +138,7 @@ export function openGit(root: string, committer: Committer): Git {
         ]);
         return (await head())!;
       }),
+    ignored: (path) => serial(async () => (await raw(['check-ignore', '-q', '--no-index', '--', path], [0, 1], false)).code === 0),
     clearIndexLock: () =>
       serial(async () => {
         const lock = (await run(['rev-parse', '--git-path', 'index.lock'])).trim();

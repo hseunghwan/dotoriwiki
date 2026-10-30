@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { claudeCli } from '../src/claude.ts';
 import { execRun, sourceFetcher } from '../src/enrich.ts';
+import { sipsShrink } from '../src/shrink.ts';
 import { FEEDS, pollFeeds, type FeedReport } from '../src/feeds.ts';
 import { DEFAULT_MODELS, routeLlm } from '../src/models.ts';
 import { startLoops } from '../src/loops.ts';
@@ -43,7 +44,7 @@ const llm = routeLlm(DEFAULT_MODELS, (c) => {
 });
 const wiki = await openWiki(root, {
   llm,
-  fetchSource: sourceFetcher({ http: fetch, run: execRun, ytDlp: process.env.YT_DLP_BIN ?? 'yt-dlp' }),
+  fetchSource: sourceFetcher({ http: fetch, run: execRun, ytDlp: process.env.YT_DLP_BIN ?? 'yt-dlp' }), shrinkPhoto: sipsShrink(execRun),
   maxAttempts: 3,
   reviewBelowConfidence: 0.6,
   ingestTimeoutMs: 10 * 60_000,

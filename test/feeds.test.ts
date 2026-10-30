@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FEEDS, feedMemoId, pollFeeds, recent, type FeedPlan } from '../src/feeds.ts';
 import { parseMemoFile } from '../src/wiki/pages.ts';
-import { FEED_NAMES, parseMemoId, type DomainName, type Memo, type TimeZone } from '../src/wiki/index.ts';
+import { FEED_NAMES, parseMemoId, type DomainName, type NewMemo, type TimeZone } from '../src/wiki/index.ts';
 import { editConfig, fakeLlm, listDir, open, readText, tempWiki } from './helpers.ts';
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), 'fixture', 'feeds');
@@ -35,8 +35,8 @@ function feedHttp(over: (url: string) => Response | null = () => null) {
 const PLAN: FeedPlan = { timeZone: 'Asia/Seoul' as TimeZone, feeds: new Map(FEED_NAMES.map((n) => [n, { domain: 'news' as DomainName }])) };
 
 function sink() {
-  const memos: Memo[] = [];
-  return { memos, accept: async (m: Memo) => (memos.push(m), { kind: 'created' as const }) };
+  const memos: NewMemo[] = [];
+  return { memos, accept: async (m: NewMemo) => (memos.push(m), { kind: 'created' as const }) };
 }
 
 test('feedMemoId: a UUID parseMemoId accepts, the same for the same item forever', () => {
@@ -151,7 +151,7 @@ test('polling twice into a real Wiki inbox collects each item once', async () =>
   const root = await tempWiki();
   const wiki = await open(root, fakeLlm());
   const feeds = { geeknews: { ...FEEDS.geeknews, cap: 3 }, ghsa: { ...FEEDS.ghsa, cap: 2 } };
-  const ports = { http: feedHttp().http, accept: (m: Memo) => wiki.accept(m), now: () => NOW };
+  const ports = { http: feedHttp().http, accept: (m: NewMemo) => wiki.accept(m), now: () => NOW };
   const plan: FeedPlan = { ...(await wiki.config()), feeds: new Map([['geeknews', { domain: '스터디' as DomainName }], ['ghsa', { domain: '스터디' as DomainName }]]) };
   const first = await pollFeeds(feeds, plan, ports);
   assert.deepEqual(first.map((r) => (r.kind === 'polled' ? [r.created, r.duplicate] : r.kind)), [[3, 0], [2, 0]]);

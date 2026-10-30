@@ -12,6 +12,8 @@
  *   <domain>/hold/<id>.md             memo waiting for the user   routeNext() when unsure; confirm() renames it to raw/
  *   <domain>/raw/<id>.md              routed memo, immutable      routeNext() when sure, confirm(), or move(); written once
  *   <domain>/raw/<id>.source.md       enrichment sidecar          runNext(), written once after the marker, before the LLM runs
+ *   _originals/<id>-<n>.<ext>         a photo as uploaded         storePhoto(); never committed (openWiki checks .gitignore)
+ *   _attachments/<id>-<n>.jpg         its 2048 px copy            storePhoto(), remade by accept() if gone; committed with the ingest
  *   <domain>/wiki/**                  pages                       changed only inside runNext(domain)
  *   <domain>/wiki/log.md              THE LEDGER                  appended by runNext/retry/move; anything the LLM writes to it is reset
  *   dotoriwiki.yaml                   the wiki's configuration    written by the user; committed as manual(config) before a job
@@ -44,7 +46,7 @@
  * particular must stay unreachable: a commit made outside runNext would break the ledger.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { promises as fs, watch as fsWatch } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import {
@@ -62,6 +64,9 @@ import {
   parseAnswerStaging, parseMemoFile, parseMemoId, renderAnswerPage, renderAnswerStaging, renderIndex, renderMemoFile,
   roleOf, type MEMO_SOURCES, type PageNameIndex, type Problem,
 } from './pages.ts';
+import {
+  attachmentName, describePhoto, photoFacts, photoLocation, photoStem, sha256Hex, sniffPhoto, type Attachment, type AttachmentRequest,
+} from './photos.ts';
 import { isoWithOffset, linksToFetch, renderSourceFile } from './sources.ts';
 
 export type { ConfigParse, ConfigProblem, DomainConfig, FeedName, Locale, MachineFacts, ModelProfile, PageTypeSpec, TimeZone, WikiConfig } from './config.ts';
@@ -69,6 +74,8 @@ export { CONFIG_FILE, CONFIG_VERSION, FEED_NAMES, WikiConfigError, domainIn, par
 export type { Parsed, Problem } from './pages.ts';
 export { pageRefString, parseAnswerId, parseMemo, parseMemoId } from './pages.ts';
 export type { SourceEntry, SourceFile } from './sources.ts';
+export type { Attachment, AttachmentRequest, PhotoDevice, PhotoOrigin } from './photos.ts';
+export { describeDevice, MAX_PHOTO_BYTES, MAX_PHOTOS } from './photos.ts';
 export { isoWithOffset, parseSourceFile } from './sources.ts';
 
 
@@ -95,7 +102,11 @@ export type Memo = {
   readonly domainHint: string | null;
   /** Set by agents writing from a working directory; null for phone memos. */
   readonly context: MemoContext | null;
+  readonly attachments: readonly Attachment[];
 };
+
+/** A memo as sent, before accept reads its photos: they are named by number only. */
+export type NewMemo = Omit<Memo, 'attachments'> & { readonly attachments: readonly AttachmentRequest[] };
 
 /** How a memo reached its domain. Written once into raw/<id>.md frontmatter as `routing:`. */
 export type Routing =
@@ -145,7 +156,13 @@ export type MemoDetail = MemoSummary & {
 
 export type AcceptResult =
   | { readonly kind: 'created' }
-  | { readonly kind: 'duplicate'; readonly state: MemoState; readonly domain: DomainName | null };
+  | { readonly kind: 'duplicate'; readonly state: MemoState; readonly domain: DomainName | null }
+  | { readonly kind: 'missing-photo'; readonly n: number };
+
+export type StorePhotoResult =
+  | { readonly kind: 'stored' | 'same'; readonly name: string; readonly sha256: string; readonly bytes: number }
+  | { readonly kind: 'conflict'; readonly name: string }
+  | { readonly kind: 'unsupported' };
 
 
 /** A wiki page: `page` is its path under <domain>/wiki/ without `.md`, or just its basename. */
@@ -250,6 +267,8 @@ export type EditRequest = {
   readonly verdicts: readonly string[];
   /** Called with every path the model tried to write, allowed or denied, absolute or relative to cwd. */
   readonly onTouch: (path: string) => void;
+  /** Absolute paths of photos the model should look at; they sit outside cwd. */
+  readonly images: readonly string[];
 };
 export type EditResult =
   | { readonly kind: 'finished'; readonly verdict: string; readonly pages: readonly string[] }
@@ -269,11 +288,15 @@ export type FetchedSource =
 /** A rejection fails the job attempt like any other thrown error. */
 export type FetchSource = (url: string) => Promise<FetchedSource>;
 
+/** Writes `dst` as a JPEG no longer than 2048 px on its long edge. Rejects when it cannot read `src`. */
+export type ShrinkPhoto = (src: string, dst: string) => Promise<void>;
+
 
 export type WikiOptions = {
   readonly llm: Llm;
   /** Fills raw/<id>.source.md for the links in a memo before its ingest runs. */
   readonly fetchSource: FetchSource;
+  readonly shrinkPhoto: ShrinkPhoto;
   readonly maxAttempts: number;
   /** A classifier answer below this confidence, like a fallback, waits in hold/ for the user. */
   readonly reviewBelowConfidence: number;
@@ -290,8 +313,15 @@ export interface Wiki {
    * creating <d>/CLAUDE.md and its entry in the file; the next call sees it.
    */
   config(): Promise<WikiConfig>;
-  /** Makes the memo durable, never calls an LLM. Resending an id changes nothing on disk. */
-  accept(memo: Memo): Promise<AcceptResult>;
+  /**
+   * Makes the memo durable, never calls an LLM. Resending an id changes nothing on disk. Its
+   * photos must be stored first; their metadata is read from the originals here.
+   */
+  accept(memo: NewMemo): Promise<AcceptResult>;
+  /** Keeps photo n of a memo as sent. The same bytes again are `same`; other bytes are a conflict. */
+  storePhoto(id: MemoId, n: number, bytes: Uint8Array): Promise<StorePhotoResult>;
+  /** The absolute path of an _attachments/ file, or null when the name is not one. */
+  attachmentPath(file: string): Promise<string | null>;
   /** Checks every cited page exists at HEAD, then stages the answer for its domain worker. */
   fileAnswer(filing: AnswerFiling): Promise<FileAnswerResult>;
   /** Routes the oldest inbox memo. Unavailable and paused leave it in the inbox untouched. */
@@ -345,9 +375,13 @@ export async function openWiki(root: string, opts: WikiOptions): Promise<Wiki> {
     if (unknown) throw new Error(`${lay.configFile}: version ${unknown.problem}`);
     const git = openGit(lay.root, opts.committer);
     await git.clearIndexLock();
-    await sweepTmp([lay.inboxDir, lay.inflightDir]);
+    if (!(await git.ignored('_originals/x.jpg'))) {
+      throw new Error('_originals/ must be listed in the wiki .gitignore: original photos keep their GPS and are never committed');
+    }
+    await sweepTmp([lay.inboxDir, lay.inflightDir, lay.originalsDir, lay.attachmentsDir]);
     const wiki = new WikiImpl(lay, git, opts, lock);
     await wiki.bootstrap();
+    await wiki.sweepOrphanPhotos();
     return wiki;
   } catch (e) {
     await lock.release();
@@ -419,15 +453,25 @@ const ingestRules = (date: string, types: readonly string[]) => `## 서버가 �
 - \`wiki/answers/\`는 저장된 질문 답이다. 정리 근거로 쓰지 않고 고치지 않는다.
 - 페이지 frontmatter에는 ${PAGE_FIELDS.map((f) => `\`${f}\``).join(', ')}를 모두 단다. \`type\`은 ${types.map((t) => `\`${t}\``).join(', ')} 중 하나다.
 - \`[[링크]]\`는 이미 있거나 이번에 만드는 위키 페이지에만 건다. 원본 id는 링크로 걸지 말고 \`sources\`와 본문에 글자로 적는다.
+- 사진은 원본에 붙은 것만 \`![[파일명]]\`으로 넣는다. 사진에서 보이는 내용은 사진에서 본 것이라고 밝혀 적는다.
 - 빈 파일이나 본문 없는 페이지를 만들지 않는다.
 - 끝나면 판정(\`verdict\`)과 만들거나 고친 페이지의 \`wiki/\` 기준 경로 목록(\`pages\`)을 구조화된 응답으로 돌려준다.`;
 
 async function performIngest(env: Env, job: Extract<Job, { kind: 'ingest' }>, ctx: JobCtx): Promise<Performed> {
   const cwd = env.layout.domainDir(job.ref.domain);
   const id = job.ref.id;
+  const memo = parseMemoFile(await fs.readFile(join(cwd, 'raw', `${id}.md`), 'utf8'));
+  const photos = (memo.ok ? memo.value.memo.attachments : []).filter((a) => job.inputs.includes(env.layout.attachmentRel(a.file)));
+  const images = photos.map((a) => join(env.layout.attachmentsDir, a.file));
   const prompt = [
     `원본 \`raw/${id}.md\` 하나를 정리 작업 순서대로 위키에 반영해라.`,
     job.inputs.some((p) => p.endsWith('.source.md')) ? `수집 자료 \`raw/${id}.source.md\`도 함께 읽는다.` : '',
+    photos.length
+      ? [
+          `원본에 사진 ${photos.length}장이 붙어 있다. 각 파일을 Read로 열어 보고 무엇이 찍혔는지 정리에 반영한다. 페이지에 넣을 때는 \`![[파일명]]\`으로 쓴다.`,
+          ...photos.map((a, i) => `- \`${images[i]}\` (\`![[${a.file}]]\`) ${describePhoto(a, i)}`),
+        ].join('\n')
+      : '',
     ctx.history.lastFailure ? `\n지난 시도는 서버 검사에서 실패해 되돌려졌다. 이유: ${ctx.history.lastFailure.reason}\n같은 문제가 없도록 처음부터 다시 해라.` : '',
   ].filter(Boolean).join('\n');
   return env.llm.edit({
@@ -439,6 +483,7 @@ async function performIngest(env: Env, job: Extract<Job, { kind: 'ingest' }>, ct
     writableDir: 'wiki',
     verdicts: INGEST_VERDICTS,
     onTouch: ctx.touch,
+    images,
   });
 }
 
@@ -513,6 +558,8 @@ function locate(p: Places, id: MemoId): Located | null {
 type Found = { readonly memo: Memo; readonly routing: Routing | null; readonly at: (Located & { readonly history: JobHistory }) | null };
 
 const INTERRUPTED = 'gateway stopped mid-job';
+/** An upload this old with no memo naming it was abandoned on the phone. */
+const ORPHAN_PHOTO_MS = 7 * 24 * 3_600_000;
 
 function failureOf(f: Failure, attempts: number): MemoFailure {
   const interrupted = (f.kind === 'attempt-failed' && f.interrupted) || f.reason === INTERRUPTED;
@@ -534,13 +581,26 @@ function perHead<T>(): (key: string, make: () => Promise<T>) => Promise<T> {
   };
 }
 
+async function asyncFilter<T>(xs: readonly T[], keep: (x: T) => Promise<boolean>): Promise<T[]> {
+  const out: T[] = [];
+  for (const x of xs) if (await keep(x)) out.push(x);
+  return out;
+}
+
 const sha256 = (text: string | null) => (text === null ? 'absent' : createHash('sha256').update(text).digest('hex'));
 const byOrder = (a: Job, b: Job) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0);
 const orderKey = (iso: string, id: string) => `${String(Date.parse(iso) || 0).padStart(16, '0')}\0${id}`;
 
-/** The project is a strong hint the memo text alone may not carry, e.g. 스터디 versus 개발소식. */
+/**
+ * The project is a strong hint the memo text alone may not carry, e.g. 스터디 versus 개발소식.
+ * Photos go in as their metadata line; the classifier never sees pixels.
+ */
 const classifierText = (m: Memo) =>
-  m.context ? `${m.text}\n\n작성 맥락: 프로젝트 ${m.context.project}${m.context.branch ? `, 브랜치 ${m.context.branch}` : ''}` : m.text;
+  [
+    m.text,
+    m.context ? `작성 맥락: 프로젝트 ${m.context.project}${m.context.branch ? `, 브랜치 ${m.context.branch}` : ''}` : '',
+    m.attachments.map(describePhoto).join('\n'),
+  ].filter(Boolean).join('\n\n');
 
 class WikiImpl implements Wiki {
   readonly #layout: Layout;
@@ -664,6 +724,27 @@ class WikiImpl implements Wiki {
         .filter((p) => !p.startsWith(`${d}/hold/`) && !(p.startsWith(raw) && (p.endsWith('.md') || p.slice(raw.length).startsWith('.tmp-'))));
       if (paths.length) await this.#git.commit(paths, message);
     });
+  }
+
+  /** Uploads whose memo never came: originals older than a week that no memo names, and their uncommitted copies. Paused, it waits for the next open. */
+  async sweepOrphanPhotos(): Promise<void> {
+    const names = await listNames(this.#layout.originalsDir);
+    if (!names.length) return;
+    const read = await this.#readConfig();
+    if (!read.ok) return;
+    const places = await this.#places([...read.config.domains.keys()]);
+    const committed = new Set(places.head ? await this.#git.lsTree('HEAD', ['_attachments']) : []);
+    const cutoff = this.#now().getTime() - ORPHAN_PHOTO_MS;
+    for (const name of names) {
+      const m = /^(.+)-(\d{1,2})\.[a-z]+$/.exec(name);
+      const id = m ? parseMemoId(m[1]!) : null;
+      if (!id || places.inbox.has(id) || locate(places, id)) continue;
+      const original = join(this.#layout.originalsDir, name);
+      if ((await fs.stat(original)).mtimeMs > cutoff) continue;
+      await unlinkQuiet(original);
+      const copy = attachmentName(id, Number(m![2]));
+      if (!committed.has(this.#layout.attachmentRel(copy))) await unlinkQuiet(join(this.#layout.attachmentsDir, copy));
+    }
   }
 
   /** Manual edits of dotoriwiki.yaml, committed like a domain's before a job reads it. */
@@ -819,7 +900,14 @@ class WikiImpl implements Wiki {
   }
 
   /** Paused, a memo already routed elsewhere is not found, and routeNext drops its inbox copy once the wiki resumes. */
-  async accept(memo: Memo): Promise<AcceptResult> {
+  async accept(input: NewMemo): Promise<AcceptResult> {
+    const attachments: Attachment[] = [];
+    for (const req of input.attachments) {
+      const original = await this.#original(input.id, req.n);
+      if (!original) return { kind: 'missing-photo', n: req.n };
+      attachments.push(await this.#attachment(input, req, original));
+    }
+    const memo: Memo = { ...input, attachments };
     const name = `${memo.id}.md`;
     const wrote = await writeExclusive(this.#layout.inboxDir, name, renderMemoFile(memo, null));
     const config = await this.#readConfig();
@@ -829,6 +917,78 @@ class WikiImpl implements Wiki {
       return { kind: 'duplicate', domain: at.domain, state: at.state };
     }
     return wrote === 'created' ? { kind: 'created' } : { kind: 'duplicate', state: 'inbox', domain: null };
+  }
+
+  async storePhoto(id: MemoId, n: number, bytes: Uint8Array): Promise<StorePhotoResult> {
+    const ext = sniffPhoto(bytes);
+    if (!ext) return { kind: 'unsupported' };
+    const sha256 = sha256Hex(bytes);
+    const same = async (name: string): Promise<StorePhotoResult> => {
+      const kept = await fs.readFile(join(this.#layout.originalsDir, name));
+      return sha256Hex(kept) === sha256 ? { kind: 'same', name, sha256, bytes: kept.length } : { kind: 'conflict', name };
+    };
+    const existing = await this.#original(id, n);
+    if (existing) return same(existing);
+    const name = `${photoStem(id, n)}.${ext}`;
+    if ((await writeExclusive(this.#layout.originalsDir, name, bytes)) === 'exists') return same(name);
+    // Making the copy now turns bytes that only look like an image into a 400 the phone stops resending, not a 500 on every memo POST.
+    try {
+      await this.#ensureCopy(id, n, name);
+    } catch {
+      await unlinkQuiet(join(this.#layout.originalsDir, name));
+      return { kind: 'unsupported' };
+    }
+    return { kind: 'stored', name, sha256, bytes: bytes.length };
+  }
+
+  async attachmentPath(file: string): Promise<string | null> {
+    const m = /^(.+)-(\d{1,2})\.jpg$/.exec(file);
+    const id = m ? parseMemoId(m[1]!) : null;
+    if (!id || attachmentName(id, Number(m![2])) !== file) return null;
+    const path = join(this.#layout.attachmentsDir, file);
+    return (await exists(path)) ? path : null;
+  }
+
+  /** The stored original for photo n, whatever its extension. */
+  async #original(id: MemoId, n: number): Promise<string | null> {
+    const stem = `${photoStem(id, n)}.`;
+    return (await listNames(this.#layout.originalsDir)).find((name) => name.startsWith(stem) && !name.slice(stem.length).includes('.')) ?? null;
+  }
+
+  /** The 2048 px copy of an original, made once. */
+  async #ensureCopy(id: MemoId, n: number, original: string): Promise<string> {
+    const file = attachmentName(id, n);
+    const dir = this.#layout.attachmentsDir;
+    if (await exists(join(dir, file))) return file;
+    await fs.mkdir(dir, { recursive: true });
+    const tmp = join(dir, `.tmp-${file}-${randomBytes(6).toString('hex')}.jpg`);
+    try {
+      await this.#opts.shrinkPhoto(join(this.#layout.originalsDir, original), tmp);
+      await linkExclusive(tmp, dir, file);
+    } finally {
+      await unlinkQuiet(tmp);
+    }
+    return file;
+  }
+
+  /** Everything here derives from the original's bytes, so an accept retried after a crash rebuilds the same record. */
+  async #attachment(memo: NewMemo, req: AttachmentRequest, original: string): Promise<Attachment> {
+    const bytes = await fs.readFile(join(this.#layout.originalsDir, original));
+    const facts = await photoFacts(bytes, memo.tz);
+    const file = await this.#ensureCopy(memo.id, req.n, original);
+    return {
+      file,
+      original,
+      sha256: sha256Hex(bytes),
+      bytes: bytes.length,
+      width: facts.width,
+      height: facts.height,
+      origin: req.origin,
+      takenAt: facts.takenAt,
+      location: photoLocation(facts.gps, req, memo.location),
+      device: facts.device,
+      camera: facts.camera,
+    };
   }
 
   async #namesAt(rev: string, domains: readonly DomainName[]): Promise<Map<string, ReadonlySet<string>>> {
@@ -1040,7 +1200,13 @@ class WikiImpl implements Wiki {
       if (!id || `${id}.md` !== name || ledger.history('ingest', id).terminal) continue;
       const parsed = parseMemoFile((await readIfExists(join(rawDir, name))) ?? '');
       const source = `${id}.source.md`;
-      const inputs = [this.#layout.rawRel(d, name), ...((await exists(join(rawDir, source))) ? [this.#layout.rawRel(d, source)] : [])];
+      const photos = parsed.ok ? parsed.value.memo.attachments.map((a) => a.file) : [];
+      const inputs = [
+        this.#layout.rawRel(d, name),
+        ...((await exists(join(rawDir, source))) ? [this.#layout.rawRel(d, source)] : []),
+        // A copy that is gone is left out rather than committed as a deletion; the ingest just runs without it.
+        ...(await asyncFilter(photos, (f) => exists(join(this.#layout.attachmentsDir, f)))).map((f) => this.#layout.attachmentRel(f)),
+      ];
       memos.push({ kind: 'ingest', ref: { kind: 'ingest', domain: d, id }, order: orderKey(parsed.ok ? parsed.value.memo.capturedAt : '', id), inputs });
     }
     return { jobs: [...answers.sort(byOrder), ...memos.sort(byOrder)], filed };
@@ -1122,6 +1288,7 @@ class WikiImpl implements Wiki {
       allowedTypes: new Set([...dc.pageTypes.map((t) => t.type), 'answer']),
       outsideWrites,
       modifiedInputs,
+      attachments: new Set(await listNames(lay.attachmentsDir)),
     });
   }
 

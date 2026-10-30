@@ -20,7 +20,21 @@ export type MemoRequest = {
   source: MemoSourceWire;
   domain_hint?: string | null;
   context?: MemoContextWire | null;
+  /** Each n must already be uploaded with PUT /attachments/:id/:n. `text` may be empty when this is non-empty. */
+  attachments?: MemoAttachmentWire[] | null;
 };
+
+/** `place` and `address` are geocoded on the phone from the photo's own GPS, in the same formats as location. */
+export type MemoAttachmentWire = {
+  /** 1..10, unique within the memo. */
+  n: number;
+  origin: 'gallery' | 'camera' | 'share';
+  place?: string | null;
+  address?: string | null;
+};
+
+/** PUT /attachments/:id/:n, body the raw image bytes (JPEG, HEIC, PNG or WebP; at most 40 MB). Same bytes again is 200; other bytes are 409. */
+export type AttachmentUploadResponse = { name: string; sha256: string; bytes: number };
 
 /** `running`: the ingest is mid-run now. `failed`: it gave up (포기) and waits for a retry or a move. */
 export type MemoStateWire = 'inbox' | 'held' | 'routed' | 'running' | 'ingested' | 'failed';
@@ -49,6 +63,8 @@ export type MemoListItemWire = {
   first_page: string | null;
   /** When the ingest committed or gave up. Ingested or failed only. */
   finished_at: string | null;
+  /** How many photos the memo carries. */
+  photos: number;
 };
 export type MemoListResponse = { memos: MemoListItemWire[]; next_before: string | null };
 
@@ -69,6 +85,8 @@ export type MemoDetailWire = Omit<MemoListItemWire, 'text'> & {
   /** The pages the ingest commit created or modified, under wiki/ without .md. */
   pages: { path: string; type: string | null; change: 'created' | 'modified' }[];
   failure: MemoFailureWire | null;
+  /** Fetch each with GET /attachments/:file (the 2048 px JPEG). `device` is "make model". */
+  attachments: { file: string; taken_at: string | null; place: string | null; device: string | null }[];
 };
 
 /** POST /answers. `cited` entries are "도메인/wiki/페이지", or "페이지" meaning `domain`. */

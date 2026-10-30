@@ -6,17 +6,18 @@
  */
 
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { promises as fs } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type {
-  AnswerResponse, ChatDetailWire, ChatFrame, ChatListResponse, ChatSummaryWire, ErrorResponse, HeldResponse, MemoListResponse, ReleaseResponse, RetryResponse,
+  AnswerResponse, AttachmentUploadResponse, ChatDetailWire, ChatFrame, ChatListResponse, ChatSummaryWire, ErrorResponse, HeldResponse, MemoListResponse, ReleaseResponse, RetryResponse,
   StatusResponse,
 } from './api.ts';
 import type { ChatOut, ChatTurn } from './chat.ts';
 import { parseChatId, type ChatCursor, type ChatId, type ChatSession, type ChatStore } from './chats.ts';
 import {
-  domainIn, pageRefString, parseAnswerId, parseMemoId, parsePageRef, WikiConfigError, type AnswerFiling, type ChatTarget, type JobRef, type MemoCursor,
-  type MemoId, type Parsed, type PageRef, type ReleaseResult, type Wiki,
+  domainIn, MAX_PHOTO_BYTES, MAX_PHOTOS, pageRefString, parseAnswerId, parseMemoId, parsePageRef, WikiConfigError, type AnswerFiling, type ChatTarget, type JobRef,
+  type MemoCursor, type MemoId, type Parsed, type PageRef, type ReleaseResult, type Wiki,
 } from './wiki/index.ts';
 import { handleMcp } from './mcp.ts';
 import { acceptMemo, detailWire, listItem } from './wire.ts';
@@ -56,7 +57,7 @@ class BodyError extends Error {
   }
 }
 
-async function readJson(req: IncomingMessage, max: number): Promise<unknown> {
+async function readBytes(req: IncomingMessage, max: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req as AsyncIterable<Buffer>) {
@@ -64,9 +65,14 @@ async function readJson(req: IncomingMessage, max: number): Promise<unknown> {
     if (size > max) throw new BodyError(413, 'too_large', `body over ${max} bytes`);
     chunks.push(chunk);
   }
-  if (size === 0) return null;
+  return Buffer.concat(chunks);
+}
+
+async function readJson(req: IncomingMessage, max: number): Promise<unknown> {
+  const bytes = await readBytes(req, max);
+  if (bytes.length === 0) return null;
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return JSON.parse(bytes.toString('utf8'));
   } catch {
     throw new BodyError(400, 'bad_request', 'body is not JSON');
   }
@@ -164,8 +170,35 @@ export async function parseRetryRequest(body: unknown, wiki: Wiki): Promise<Pars
 
 async function postMemo(deps: HttpDeps, body: unknown): Promise<Reply> {
   const r = await acceptMemo(deps.wiki, body);
-  if (!r.ok) return error(400, 'bad_request', r.detail);
+  if (!r.ok) return r.status === 422 ? error(422, 'unprocessable', r.detail) : error(400, 'bad_request', r.detail);
   return json(r.value.status === 'accepted' ? 201 : 200, r.value);
+}
+
+/** `param` is `<memo id>/<n>`. The memo comes after its photos, so the id names a memo that may not exist yet. */
+async function putPhoto(deps: HttpDeps, req: IncomingMessage, param: string | null): Promise<Reply> {
+  const [rawId, rawN] = (param ?? '').split('/');
+  const id = idParam(rawId ?? null, parseMemoId);
+  const n = Number(rawN);
+  if (!id) return error(400, 'bad_request', 'id: expected a ULID or UUID');
+  if (!Number.isInteger(n) || n < 1 || n > MAX_PHOTOS) return error(400, 'bad_request', `n: an integer from 1 to ${MAX_PHOTOS}`);
+  const r = await deps.wiki.storePhoto(id, n, await readBytes(req, MAX_PHOTO_BYTES));
+  switch (r.kind) {
+    case 'unsupported': return error(400, 'bad_request', 'body: not a readable JPEG, HEIC, PNG or WebP image');
+    case 'conflict': return error(409, 'conflict', `photo ${n} of ${id} was already uploaded with other bytes`);
+    case 'stored':
+    case 'same': return json(r.kind === 'stored' ? 201 : 200, { name: r.name, sha256: r.sha256, bytes: r.bytes } satisfies AttachmentUploadResponse);
+  }
+}
+
+/** The 2048 px copy. It never changes once made, so the phone may cache it for good. */
+async function getPhoto(deps: HttpDeps, res: ServerResponse, param: string | null): Promise<Reply | null> {
+  const file = idParam(param, (s) => s);
+  const path = file ? await deps.wiki.attachmentPath(file) : null;
+  if (!path) return error(404, 'not_found', 'no such attachment');
+  const bytes = await fs.readFile(path);
+  res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': bytes.length, 'cache-control': 'private, max-age=31536000, immutable' });
+  res.end(bytes);
+  return null;
 }
 
 async function postAnswer(deps: HttpDeps, body: unknown): Promise<Reply> {
@@ -370,7 +403,7 @@ async function deleteChat(deps: HttpDeps, param: string | null): Promise<Reply> 
 
 const mcpMethodNotAllowed = json(405, { jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null });
 
-/** `param` is the raw `:id` path segment of a /memos/:id or /chats/:id route. */
+/** `param` is the raw `:id` path segment of a /memos/:id, /chats/:id or /attachments/:id route, and `:id/:n` for /attachments/:id/:n. */
 type Route = (deps: HttpDeps, body: unknown, req: IncomingMessage, res: ServerResponse, param: string | null) => Promise<Reply | null>;
 const ROUTES: Record<string, Route> = {
   'POST /memos': (d, b) => postMemo(d, b),
@@ -379,6 +412,8 @@ const ROUTES: Record<string, Route> = {
   'POST /memos/:id/confirm': (d, _b, _q, _s, id) => postConfirm(d, id),
   'POST /memos/:id/move': (d, b, _q, _s, id) => postMove(d, b, id),
   'GET /held': (d) => getHeld(d),
+  'PUT /attachments/:id/:n': (d, _b, q, _s, p) => putPhoto(d, q, p),
+  'GET /attachments/:id': (d, _b, _q, s, file) => getPhoto(d, s, file),
   'POST /answers': (d, b) => postAnswer(d, b),
   'POST /jobs/retry': (d, b) => postRetry(d, b),
   'POST /chat': postChat,
@@ -403,11 +438,13 @@ export async function startHttp(deps: HttpDeps, listen: Listen): Promise<{ reado
       try {
         if (!authorized(req, deps.token)) return send(error(401, 'unauthorized'));
         const path = (req.url ?? '').split('?')[0]!;
-        const withId = /^\/(memos|chats)\/([^/]+)(\/[a-z]+)?$/.exec(path);
-        const route = ROUTES[`${req.method} ${withId ? `/${withId[1]}/:id${withId[3] ?? ''}` : path}`];
+        const withId = /^\/(memos|chats|attachments)\/([^/]+)(?:\/([a-z]+|\d{1,2}))?$/.exec(path);
+        const sub = withId?.[3];
+        const numbered = sub !== undefined && /^\d+$/.test(sub);
+        const route = ROUTES[`${req.method} ${withId ? `/${withId[1]}/:id${sub === undefined ? '' : numbered ? '/:n' : `/${sub}`}` : path}`];
         if (!route) return send(error(404, 'not_found'));
         const body = req.method === 'POST' ? await readJson(req, deps.maxBodyBytes) : null;
-        const reply = await route(deps, body, req, res, withId ? withId[2]! : null);
+        const reply = await route(deps, body, req, res, withId ? (numbered ? `${withId[2]}/${sub}` : withId[2]!) : null);
         if (reply) send(reply);
       } catch (e) {
         if (res.headersSent) return void res.end();

@@ -43,7 +43,9 @@ export function classifyArgv(choice: CodexChoice, schemaFile: string): readonly 
 }
 
 export function editArgv(req: EditRequest, choice: CodexChoice, schemaFile: string): readonly string[] {
-  return [...COMMON, ...modelArgs(choice), '-s', 'workspace-write', '-C', join(req.cwd, req.writableDir), '--output-schema', schemaFile, '-'];
+  // `--image=` binds one value; a bare `-i` takes every following argument, the stdin `-` included.
+  const images = req.images.map((p) => `--image=${p}`);
+  return [...COMMON, ...modelArgs(choice), '-s', 'workspace-write', '-C', join(req.cwd, req.writableDir), ...images, '--output-schema', schemaFile, '-'];
 }
 
 export const classifyPrompt = (req: ClassifyRequest) =>
