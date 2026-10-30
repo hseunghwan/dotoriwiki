@@ -141,7 +141,23 @@ No cross-family judge ran, because only Claude models are available in this setu
 ## Open questions
 
 - What reads `agents_may_read` first: MCP read tools limited to those domains, or a generated agent skill that replaces the hand-written one? P1 only parses it and shows it in `/status`.
-- Should the gateway commit edits to `dotoriwiki.yaml` itself, as it already commits manual edits inside domain folders?
+
+Settled: the gateway commits hand edits of `dotoriwiki.yaml` itself, as `manual(config)`, at open and before each job, the same way it commits manual edits inside a domain folder.
+
+## Implementation notes
+
+Choices made while building P1 that the sections above leave open or that differ from them:
+
+- `parseWikiConfig(text, machine)` takes the machine's model profile names. An unknown `model_profile` is a warning, not a problem: the config stays usable, the domain's `modelProfile` is null, and the warning shows in `/status` with its key and fix. Every other problem pauses the wiki.
+- `Wiki.domains()` and `Wiki.parseDomain()` are gone. Callers read `Wiki.config()` and look a name up with `domainIn(config, name)`. `EditRequest.domain` became `EditRequest.modelProfile`, so `routeLlm` needs no domain at all.
+- Paused, `routeNext` returns `{ kind: 'paused', problems }` and `runNext` returns `{ kind: 'paused' }` instead of throwing. The router logs a set of problems once, not on every rescan. An edit of `dotoriwiki.yaml` wakes the router and every worker. Calls that need the domain list (`memos`, `held`, `confirm`, `move`, `retry`, answers, chat) throw `WikiConfigError`, which HTTP answers with 503 and the new error code `paused`.
+- `GET /status` gains `config: { state: 'ok' | 'paused', problems: [{ key, problem, fix }] }` and, per domain, `agents_may_read` and `model_profile`. The fields are optional in `api.ts`, because the app may still talk to a gateway that predates them.
+- `openWiki` also refuses a file with no `version`, as an unknown version. A missing root `CLAUDE.md` or `<d>/CLAUDE.md` pauses with its own problem.
+- `models.json` keeps its shape. When `edit` is present it must have `edit.default`. An absent file, or a file without `edit`, still runs on the defaults.
+- MCP `write_memo` keeps accepting while paused: the domain hint is checked once the wiki resumes, and the memo is stamped in the machine's time zone.
+- `pollFeeds` polls only the feeds the config names. `COLLECT_FEEDS=off` still turns the collector off for the process.
+- `scripts/migrate-config.ts` replaces each legacy table with a line pointing at `dotoriwiki.yaml` and keeps the prose around it. A section left with nothing else loses its heading. A `models.json` `edit` key that names a domain becomes that domain's `model_profile`, so the machine file works unchanged. `test/fixture/legacy-wiki/` holds the pre-P1 `CLAUDE.md` files, and a test checks that migrating them yields the current fixture byte for byte.
+- `scripts/e2e.ts` and `scripts/confinement.ts` still name the author's Korean domains, because they run against a copy of the live wiki. P3 or P8 should point them at the presets.
 
 ## Next step
 
