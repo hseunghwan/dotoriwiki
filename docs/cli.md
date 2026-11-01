@@ -18,6 +18,20 @@ The machine's settings live in `~/.config/dotoriwiki/gateway.env`, or the file `
 
 `start`, `doctor`, and `pair` read the file and put the environment over it, so a variable set in your shell wins. `PORT=9000 dotoriwiki start` runs once on port 9000 without editing the file. The service sets only `PATH`, `HOME`, and `DOTORIWIKI_ENV`, so it runs on the file alone.
 
+### Who pays for Claude
+
+`CLAUDE_BILLING` picks who pays for the `claude -p` calls.
+
+- `subscription`, the default: claude uses the subscription you logged in to with `claude`. The gateway removes `ANTHROPIC_API_KEY` from claude's environment, so a key exported in your shell never switches billing to the API.
+- `api`: claude bills the Anthropic API key in `ANTHROPIC_API_KEY`, and needs no login. Put both lines in the env file, because the service does not see your shell.
+
+```sh
+CLAUDE_BILLING=api
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+The gateway reads `ANTHROPIC_API_KEY` only when `CLAUDE_BILLING=api`. `api` without a key is a settings error, so `start`, `doctor`, and `install` stop and say to add it. `install` copies the key nowhere: the service file names the env file and holds no key. Codex keeps its own login, and the gateway removes `CODEX_API_KEY` and `OPENAI_API_KEY` from codex's environment in either mode.
+
 ## init
 
 ```
@@ -48,7 +62,7 @@ doctor
 - The env file exists, is not readable by others, and passes the gateway's own settings check. `HOST=127.0.0.1` is a warning, because a phone cannot reach it. When the file is missing and `~/.config/llmwiki/gateway.env` exists, from before the rename, a warning gives the commands that move the settings and the chats.
 - `models.json`, if present, parses.
 - `WIKI_ROOT` is a git work tree, `dotoriwiki.yaml` parses with every problem listed by key, each domain has its `CLAUDE.md`, and `_originals/` is gitignored.
-- `claude --version` runs (`CLAUDE_BIN`). The login is not checked, because that would spend a request. `codex --version` is checked only when `models.json` uses codex.
+- `claude --version` runs (`CLAUDE_BIN`), and which billing `CLAUDE_BILLING` picks is shown. Neither the login nor the API key is checked, because that would spend a request, and the key is never printed. `codex --version` is checked only when `models.json` uses codex.
 - `yt-dlp` is a warning when missing: video links get no transcript.
 - `/usr/bin/sips` is a warning when missing, as on Linux: a memo with photos cannot be saved there. Text memos work.
 
