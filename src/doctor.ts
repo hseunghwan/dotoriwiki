@@ -6,6 +6,8 @@
  */
 
 import { promises as fs } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { execRun, type Run } from './enrich.ts';
 import { loadConfig, machinePaths, parseEnvFile, type Config } from './machine.ts';
 import { loadModels, profileNames, type Models } from './models.ts';
@@ -84,7 +86,8 @@ async function envConfig(env: NodeJS.ProcessEnv, add: (status: CheckStatus, what
   try {
     text = await fs.readFile(file, 'utf8');
   } catch {
-    add('fail', `the env file ${file} does not exist`, 'run `init` to create it, or set LLMWIKI_ENV to the env file the gateway reads');
+    await legacyMachine(env, add);
+    add('fail', `the env file ${file} does not exist`, 'run `init` to create it, or set DOTORIWIKI_ENV to the env file the gateway reads');
     return null;
   }
   if (((await fs.stat(file)).mode & 0o077) !== 0) add('warn', `${file} is readable by other users, and it holds the gateway token`, `chmod 600 ${file}`);
@@ -100,6 +103,20 @@ async function envConfig(env: NodeJS.ProcessEnv, add: (status: CheckStatus, what
     add('warn', `HOST is ${cfg.host}, so only this machine reaches the gateway`, `set HOST in ${file} to this machine's Tailscale address before pairing a phone`);
   }
   return cfg;
+}
+
+/** The settings a gateway from before the rename kept under ~/.config/llmwiki. */
+async function legacyMachine(env: NodeJS.ProcessEnv, add: (status: CheckStatus, what: string, fix?: string | null) => void): Promise<void> {
+  const home = env.HOME || homedir();
+  const old = join(home, '.config', 'llmwiki');
+  if (!(await fs.access(join(old, 'gateway.env')).then(() => true, () => false))) return;
+  const { modelsFile, chatsDir } = machinePaths(env);
+  const configDir = dirname(modelsFile);
+  add('warn', `${old} holds an env file from before the rename to dotoriwiki`, [
+    `mkdir -p ${configDir} ${dirname(chatsDir)}`,
+    `mv ${old}/* ${configDir}/`,
+    `mv ${join(home, '.local', 'share', 'llmwiki', 'chats')} ${chatsDir}`,
+  ].join(' && '));
 }
 
 async function wikiChecks(cfg: Config, models: Models | null, add: (status: CheckStatus, what: string, fix?: string | null) => void): Promise<void> {

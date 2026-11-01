@@ -27,7 +27,7 @@ const section = (title: string) => console.log(`\n━━━━ ${title} ━━�
 const git = (root: string, ...args: string[]) => execFileSync('git', ['-c', 'core.quotepath=false', ...args], { cwd: root, encoding: 'utf8' });
 const PICTURES = '/System/Library/Desktop Pictures';
 
-const work = await fs.mkdtemp(join(process.env.E2E_TMP ?? tmpdir(), 'llmwiki-e2e-photo-'));
+const work = await fs.mkdtemp(join(process.env.E2E_TMP ?? tmpdir(), 'dotoriwiki-e2e-photo-'));
 const root = join(work, 'wiki');
 // .gateway/ holds the live gateway's lock and inflight markers, which belong to that process only.
 await fs.cp(source, root, { recursive: true, filter: (src) => !src.startsWith(join(source, '.gateway')) });

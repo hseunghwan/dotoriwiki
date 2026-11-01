@@ -17,7 +17,7 @@ async function serve() {
   const llm = fakeLlm();
   const wiki = await open(root, llm);
   const http = await startHttp(
-    { wiki, chat: async function* () {}, chats: await openChatStore(await mkdtemp(join(tmpdir(), 'llmwiki-chats-'))), token: TOKEN, serverVersion: '0.1.0', now: () => new Date('2026-10-29T00:00:00Z'), maxBodyBytes: 4096 },
+    { wiki, chat: async function* () {}, chats: await openChatStore(await mkdtemp(join(tmpdir(), 'dotoriwiki-chats-'))), token: TOKEN, serverVersion: '0.1.0', now: () => new Date('2026-10-29T00:00:00Z'), maxBodyBytes: 4096 },
     { host: '127.0.0.1', port: 0 },
   );
   const url = new URL(`http://127.0.0.1:${http.port}/mcp`);

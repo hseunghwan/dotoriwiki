@@ -87,7 +87,7 @@ test('git status paths come back absolute from the repo top', () => {
 });
 
 test('an edit reports every file the run changed under wiki/, modified, new, or deleted', async () => {
-  const root = await fs.mkdtemp(join(process.env.LLMWIKI_TEST_TMP ?? tmpdir(), 'llmwiki-codex-'));
+  const root = await fs.mkdtemp(join(process.env.DOTORIWIKI_TEST_TMP ?? tmpdir(), 'dotoriwiki-codex-'));
   const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: root });
   const wiki = join(root, '스터디', 'wiki');
   await fs.mkdir(wiki, { recursive: true });

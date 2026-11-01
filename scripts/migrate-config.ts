@@ -2,7 +2,7 @@
  * One-time: gives a wiki made before dotoriwiki.yaml its config file, keeping its history.
  *
  *   node scripts/migrate-config.ts <wiki root> --fallback 일상 [--feeds-to <domain>] \
- *     [--time-zone Asia/Seoul] [--locale ko] [--models ~/.config/llmwiki/models.json]
+ *     [--time-zone Asia/Seoul] [--locale ko] [--models ~/.config/dotoriwiki/models.json]
  *
  * Stop the old gateway first. The root CLAUDE.md `## 도메인 목록` table becomes `domains` with
  * descriptions and agents_may_read (허용 → true). Each domain's `## 페이지 종류` table becomes its

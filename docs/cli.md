@@ -21,9 +21,9 @@ It does four things.
 1. Copies `presets/<locale>` into `dir`. The English preset has the domains `journal`, `learning`, and `someday`. The Korean one has `일상`, `스터디`, and `미루기 아카이빙`. Rename or add domains later by editing `dotoriwiki.yaml` and the folders. The presets are also the wikis the gateway tests run on.
 2. Sets `time_zone` in `dotoriwiki.yaml` to this machine's zone.
 3. Runs `git init -b main` and commits everything except the domain folders as `init`. The commit uses your git identity, or the gateway's when you have none. The gateway commits each domain as `init(<domain>)`, with its `index.md`, the first time it opens the wiki.
-4. Adds `WIKI_ROOT`, `PORT` (8787), `HOST` (127.0.0.1), and a random `GATEWAY_TOKEN` to the env file, `~/.config/llmwiki/gateway.env`, with mode 0600. A key the file already sets is kept. If it already names another `WIKI_ROOT`, `init` says so and leaves it, so the gateway keeps serving the old wiki until you change the line.
+4. Adds `WIKI_ROOT`, `PORT` (8787), `HOST` (127.0.0.1), and a random `GATEWAY_TOKEN` to the env file, `~/.config/dotoriwiki/gateway.env`, with mode 0600. A key the file already sets is kept. If it already names another `WIKI_ROOT`, `init` says so and leaves it, so the gateway keeps serving the old wiki until you change the line.
 
-Set `LLMWIKI_ENV` to use another env file. It then prints the next steps: run `doctor`, log in to Claude Code once, start the gateway, and set `HOST` to the Tailscale address before pairing a phone.
+Set `DOTORIWIKI_ENV` to use another env file. It then prints the next steps: run `doctor`, log in to Claude Code once, start the gateway, and set `HOST` to the Tailscale address before pairing a phone.
 
 ## doctor
 

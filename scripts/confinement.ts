@@ -40,9 +40,9 @@ if (locale !== 'en' && locale !== 'ko') throw new Error('--locale takes en or ko
 const [provider, model, effort] = (positionals[0] ?? 'claude:haiku').split(':');
 const choice = parseModels({ edit: { default: { provider, model, ...(effort ? { effort } : {}) } } }).edit.default;
 
-const work = await fs.mkdtemp(join(process.env.E2E_TMP ?? homedir(), 'llmwiki-confine-'));
+const work = await fs.mkdtemp(join(process.env.E2E_TMP ?? homedir(), 'dotoriwiki-confine-'));
 const root = join(work, 'wiki');
-await initWiki(root, locale, { ...process.env, LLMWIKI_ENV: join(work, 'gateway.env') });
+await initWiki(root, locale, { ...process.env, DOTORIWIKI_ENV: join(work, 'gateway.env') });
 
 const S = {
   en: {

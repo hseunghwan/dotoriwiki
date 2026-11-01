@@ -17,7 +17,7 @@ const SPEC = {
 };
 
 test('an absent models.json keeps the Claude defaults, which pass the same flags as before', async () => {
-  assert.equal(loadModels(join(tmpdir(), 'llmwiki-no-such-models.json')), DEFAULT_MODELS);
+  assert.equal(loadModels(join(tmpdir(), 'dotoriwiki-no-such-models.json')), DEFAULT_MODELS);
   const argv = classifyArgv({ locale: 'ko', systemPrompt: '# 루트', text: '메모', domains: ['journal' as DomainName] }, DEFAULT_MODELS.classify as Extract<ModelChoice, { provider: 'claude' }>);
   assert.deepEqual(argv.slice(argv.indexOf('--model'), argv.indexOf('--model') + 4), ['--model', 'haiku', '--effort', 'low']);
 });
@@ -52,7 +52,7 @@ test('startup fails with a message naming the bad entry', async () => {
     [[], /expected an object/],
   ];
   for (const [raw, message] of bad) assert.throws(() => parseModels(raw), message);
-  const file = join(await fs.mkdtemp(join(tmpdir(), 'llmwiki-models-')), 'models.json');
+  const file = join(await fs.mkdtemp(join(tmpdir(), 'dotoriwiki-models-')), 'models.json');
   await fs.writeFile(file, '{ "classify": ');
   assert.throws(() => loadModels(file), new RegExp(`^Error: ${file}: `));
 });

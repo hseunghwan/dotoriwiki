@@ -60,10 +60,10 @@ const SCRIPT = {
   },
 }[locale];
 
-const work = await fs.mkdtemp(join(process.env.E2E_TMP ?? tmpdir(), 'llmwiki-e2e-'));
+const work = await fs.mkdtemp(join(process.env.E2E_TMP ?? tmpdir(), 'dotoriwiki-e2e-'));
 const root = join(work, 'wiki');
 const envFile = join(work, 'gateway.env');
-await initWiki(root, locale, { ...process.env, LLMWIKI_ENV: envFile });
+await initWiki(root, locale, { ...process.env, DOTORIWIKI_ENV: envFile });
 const machineEnv = Object.fromEntries(parseEnvFile(await fs.readFile(envFile, 'utf8')));
 const token = machineEnv.GATEWAY_TOKEN!;
 section(`fresh ${locale} wiki at ${root}, env file ${envFile}`);

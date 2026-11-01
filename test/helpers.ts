@@ -16,7 +16,7 @@ const PRESETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'presets');
 
 /** A fresh git work tree holding a copy of a preset (presets/<locale>), with no commits. */
 export async function tempWiki(locale: 'ko' | 'en' = 'ko'): Promise<string> {
-  const root = await fs.mkdtemp(join(process.env.LLMWIKI_TEST_TMP ?? tmpdir(), 'llmwiki-test-'));
+  const root = await fs.mkdtemp(join(process.env.DOTORIWIKI_TEST_TMP ?? tmpdir(), 'dotoriwiki-test-'));
   await fs.cp(join(PRESETS, locale), root, { recursive: true });
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
   return root;
@@ -104,7 +104,7 @@ export const options = (llm: Llm, extra: Partial<WikiOptions> = {}): WikiOptions
   maxAttempts: 3,
   reviewBelowConfidence: 0.6,
   ingestTimeoutMs: 5_000,
-  committer: { name: 'llmwiki-test', email: 'test@localhost' },
+  committer: { name: 'dotoriwiki-test', email: 'test@localhost' },
   modelProfiles: ['default'],
   now: () => new Date('2026-10-29T00:00:00Z'),
   ...extra,
@@ -161,7 +161,7 @@ export function closeAtEnd(close: () => Promise<void>): () => Promise<void> {
 /** A gateway on a fresh preset wiki and an empty chat store, with a `call` that parses JSON replies. */
 export async function serveHttp(opts: { chat?: HttpDeps['chat']; now?: () => Date } = {}) {
   const root = await tempWiki();
-  const chatsDir = await fs.mkdtemp(join(process.env.LLMWIKI_TEST_TMP ?? tmpdir(), 'llmwiki-chats-'));
+  const chatsDir = await fs.mkdtemp(join(process.env.DOTORIWIKI_TEST_TMP ?? tmpdir(), 'dotoriwiki-chats-'));
   const llm = fakeLlm();
   const wiki = await open(root, llm);
   const http = await startHttp(

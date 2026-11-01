@@ -16,11 +16,11 @@ const cli = join(import.meta.dirname, '..', 'src', 'cli.ts');
 
 /** A temp HOME with a stand-in claude, so neither init nor doctor touches the real ~/.config or calls a model. */
 async function machine(): Promise<{ dir: string; env: NodeJS.ProcessEnv; envFile: string }> {
-  const dir = await fs.mkdtemp(join(process.env.LLMWIKI_TEST_TMP ?? tmpdir(), 'llmwiki-cli-'));
+  const dir = await fs.mkdtemp(join(process.env.DOTORIWIKI_TEST_TMP ?? tmpdir(), 'dotoriwiki-cli-'));
   const claude = join(dir, 'claude');
   await fs.writeFile(claude, '#!/bin/sh\necho "9.9.9 (Claude Code)"\n', { mode: 0o755 });
   const env = { PATH: process.env.PATH, HOME: join(dir, 'home'), CLAUDE_BIN: claude, LANG: 'C' };
-  return { dir, env, envFile: join(dir, 'home', '.config', 'llmwiki', 'gateway.env') };
+  return { dir, env, envFile: join(dir, 'home', '.config', 'dotoriwiki', 'gateway.env') };
 }
 
 const fails = (checks: readonly Check[]) => checks.filter((c) => c.status === 'fail').map((c) => c.what);
@@ -86,10 +86,18 @@ test('doctor names the failing key of a broken dotoriwiki.yaml and a domain with
   assert.deepEqual(failed, ['dotoriwiki.yaml domains.journal: journal/CLAUDE.md does not exist']);
 });
 
-test('doctor fails on a missing env file and names it', async () => {
-  const { env, envFile } = await machine();
+test('doctor fails on a missing env file and names it, and says how to move one from before the rename', async () => {
+  const { dir, env, envFile } = await machine();
   const checks = await doctor(env);
   assert.deepEqual(fails(checks), [`the env file ${envFile} does not exist`]);
+  assert.deepEqual(checks.filter((c) => c.status === 'warn'), []);
+
+  const old = join(dir, 'home', '.config', 'llmwiki');
+  await fs.mkdir(old, { recursive: true });
+  await fs.writeFile(join(old, 'gateway.env'), 'PORT=8787\n');
+  const warned = (await doctor(env)).filter((c) => c.status === 'warn');
+  assert.deepEqual(warned.map((c) => c.what), [`${old} holds an env file from before the rename to dotoriwiki`]);
+  assert.match(warned[0]!.fix!, new RegExp(`mv ${old}/\\* ${join(dir, 'home', '.config', 'dotoriwiki')}/`));
 });
 
 test('init refuses a folder that is not empty, and keeps the keys an env file already sets', async () => {
@@ -100,7 +108,7 @@ test('init refuses a folder that is not empty, and keeps the keys an env file al
   await assert.rejects(initWiki(taken, 'en', env), /is not empty/);
   assert.deepEqual(await fs.readdir(taken), ['notes.md']);
 
-  await fs.mkdir(join(dir, 'home', '.config', 'llmwiki'), { recursive: true });
+  await fs.mkdir(join(dir, 'home', '.config', 'dotoriwiki'), { recursive: true });
   await fs.writeFile(envFile, '# mine\nGATEWAY_TOKEN=keep-this-token-0123456789\nPORT=9999\nWIKI_ROOT=/elsewhere/wiki', { mode: 0o644 });
   const r = await initWiki(join(dir, 'wiki'), 'ko', env);
   assert.deepEqual(r.added, ['HOST']);

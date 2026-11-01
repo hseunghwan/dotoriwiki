@@ -5,7 +5,7 @@ Expo 앱 전까지 쓰는 메모 입력 방법. 폰에 Tailscale이 켜져 있�
 ## 준비
 
 1. F-Droid나 Play 스토어에서 HTTP Shortcuts 설치.
-2. 맥미니에서 토큰 확인. `cat ~/.config/llmwiki/gateway.env`의 `GATEWAY_TOKEN=` 뒤 값.
+2. 맥미니에서 토큰 확인. `cat ~/.config/dotoriwiki/gateway.env`의 `GATEWAY_TOKEN=` 뒤 값.
 
 ## 전역 변수
 
@@ -57,7 +57,7 @@ setVariable('body', JSON.stringify({ id: uuidv4(), text, captured_at: capturedAt
 
 ## 확인
 
-맥미니 로그 `~/Library/Logs/llmwiki-gateway.log`에 `routed`와 `committed` 줄이 생기면 끝까지 처리된 것이다.
+맥미니 로그 `~/Library/Logs/dotoriwiki.log`에 `routed`와 `committed` 줄이 생기면 끝까지 처리된 것이다.
 
 ## 단축어 "상태" (선택)
 

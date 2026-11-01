@@ -1,5 +1,5 @@
 {
-  "name": "llmwiki",
+  "name": "dotoriwiki",
   "version": "0.1.0",
   "description": "Save memos to the personal LLM wiki from any machine on the tailnet: the /memo skill plus the gateway's MCP server.",
   "userConfig": {
@@ -16,7 +16,7 @@
     }
   },
   "mcpServers": {
-    "llmwiki": {
+    "dotoriwiki": {
       "type": "http",
       "url": "${user_config.url}/mcp",
       "headers": { "Authorization": "Bearer ${user_config.token}" }

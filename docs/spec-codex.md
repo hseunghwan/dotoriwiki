@@ -6,7 +6,7 @@ Since P1 (`docs/design/wiki-config.md`), an `edit` key other than `default` is a
 
 ## Config: one file, parsed at startup
 
-`~/.config/llmwiki/models.json`. Optional: when it is absent, the current Claude defaults apply.
+`~/.config/dotoriwiki/models.json`. Optional: when it is absent, the current Claude defaults apply.
 
 ```json
 {

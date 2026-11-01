@@ -1,7 +1,7 @@
 {
-  "name": "llmwiki",
+  "name": "dotoriwiki",
   "owner": { "name": "hseunghwan" },
   "plugins": [
-    { "name": "llmwiki", "source": "./plugin", "description": "/memo and the LLM wiki gateway MCP server." }
+    { "name": "dotoriwiki", "source": "./plugin", "description": "/memo and the dotoriwiki gateway MCP server." }
   ]
 }

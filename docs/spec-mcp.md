@@ -30,7 +30,7 @@ export type MemoContextWire = { project: string; cwd: string; branch: string | n
 - `disable-model-invocation: true`, so it only runs when the user types `/memo`.
 - With arguments: call `write_memo` with the arguments verbatim and `context` from the session (project = cwd basename, cwd, `git branch --show-current` or null). Then check `memo_status` every few seconds, for up to about 30 s, and report in one Korean line where it landed ("스터디 › 인사이트/2026 에 정리됨"). If it isn't done in time, report "받음, 정리 대기 중".
 - Without arguments: draft a short memo from what the user learned or decided in this conversation, show it, and send only after the user confirms.
-- If the `llmwiki` MCP server is not connected, say so in one line, with the registration command.
+- If the `dotoriwiki` MCP server is not connected, say so in one line, with the registration command.
 
 ## Verification
 

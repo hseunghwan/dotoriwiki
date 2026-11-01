@@ -118,7 +118,7 @@ async function memoStatus(deps: McpDeps, args: Record<string, unknown>, signal: 
 }
 
 export async function handleMcp(deps: McpDeps, body: unknown, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const server = new Server({ name: 'llmwiki', version: deps.serverVersion }, { capabilities: { tools: {} } });
+  const server = new Server({ name: 'dotoriwiki', version: deps.serverVersion }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools([...((await configOrNull(deps.wiki))?.domains.keys() ?? [])]) }));
   server.setRequestHandler(CallToolRequestSchema, async ({ params }, extra) => {
     const args = params.arguments ?? {};

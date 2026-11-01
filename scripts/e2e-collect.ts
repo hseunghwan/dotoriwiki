@@ -31,7 +31,7 @@ const section = (title: string) => console.log(`\n━━━━ ${title} ━━�
 const git = (root: string, ...args: string[]) => execFileSync('git', ['-c', 'core.quotepath=false', ...args], { cwd: root, encoding: 'utf8' });
 const stamp = () => new Date().toISOString().slice(11, 19);
 
-const work = await fs.mkdtemp(join(process.env.E2E_TMP ?? tmpdir(), 'llmwiki-e2e-collect-'));
+const work = await fs.mkdtemp(join(process.env.E2E_TMP ?? tmpdir(), 'dotoriwiki-e2e-collect-'));
 const root = join(work, 'wiki');
 await fs.cp(source, root, { recursive: true, filter: (p) => !p.startsWith(join(source, '.gateway')) });
 const baseCommit = git(root, 'rev-parse', 'HEAD').trim();
@@ -48,7 +48,7 @@ const wiki = await openWiki(root, {
   maxAttempts: 3,
   reviewBelowConfidence: 0.6,
   ingestTimeoutMs: 10 * 60_000,
-  committer: { name: 'llmwiki-gateway', email: 'gateway@localhost' },
+  committer: { name: 'dotoriwiki-gateway', email: 'gateway@localhost' },
   modelProfiles: ['default'],
 });
 

@@ -139,7 +139,7 @@ function childEnv(): NodeJS.ProcessEnv {
 
 export function codexCli(cfg: CodexConfig): Codex {
   const { run, stopAll } = cliRunner(cfg.bin, childEnv);
-  const scratch = mkdtempSync(join(tmpdir(), 'llmwiki-codex-'));
+  const scratch = mkdtempSync(join(tmpdir(), 'dotoriwiki-codex-'));
   const emptyDir = join(scratch, 'empty');
   mkdirSync(emptyDir);
 

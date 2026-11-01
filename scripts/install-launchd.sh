@@ -5,13 +5,13 @@
 set -euo pipefail
 
 APP_DIR=${0:A:h:h}
-LABEL=com.cycle.llmwiki-gateway
-ENV_FILE=$HOME/.config/llmwiki/gateway.env
-MODELS_FILE=$HOME/.config/llmwiki/models.json
+LABEL=dotoriwiki.gateway
+ENV_FILE=$HOME/.config/dotoriwiki/gateway.env
+MODELS_FILE=$HOME/.config/dotoriwiki/models.json
 PLIST=$HOME/Library/LaunchAgents/$LABEL.plist
-LOG=$HOME/Library/Logs/llmwiki-gateway.log
+LOG=$HOME/Library/Logs/dotoriwiki.log
 
-WIKI_ROOT=${WIKI_ROOT:-$HOME/llmwiki}
+WIKI_ROOT=${WIKI_ROOT:-$HOME/dotoriwiki}
 PORT=${PORT:-8787}
 # Not $HOST: zsh presets it to the machine's hostname.
 LISTEN_HOST=${GATEWAY_HOST:-$(/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4 | head -1)}

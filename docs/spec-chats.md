@@ -4,7 +4,7 @@ Goal: the user can reopen a past 질문 conversation in the app, read it, and co
 
 ## Where it lives
 
-- The gateway owns a chat store outside the wiki: `CHATS_DIR`, default `~/.local/share/llmwiki/chats/`. Not under the wiki root, not in git, not in `.gateway/`, whose contents are advisory and safe to delete. Chats are not.
+- The gateway owns a chat store outside the wiki: `CHATS_DIR`, default `~/.local/share/dotoriwiki/chats/`. Not under the wiki root, not in git, not in `.gateway/`, whose contents are advisory and safe to delete. Chats are not.
 - One append-only JSONL file per session, `<session_id>.jsonl`:
 
 ```ts

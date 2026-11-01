@@ -48,7 +48,7 @@ for (const c of candidates) {
   if (status) { url = c; break; }
 }
 if (!url || !status) {
-  console.error(`게이트웨이에 연결되지 않아요: ${candidates.join(', ')}\n서버 로그 ~/Library/Logs/llmwiki-gateway.log 와 Tailscale 상태를 확인해 주세요.`);
+  console.error(`게이트웨이에 연결되지 않아요: ${candidates.join(', ')}\n서버 로그 ~/Library/Logs/dotoriwiki.log 와 Tailscale 상태를 확인해 주세요.`);
   process.exit(1);
 }
 

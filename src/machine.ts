@@ -24,20 +24,20 @@ export type MachinePaths = { readonly envFile: string; readonly modelsFile: stri
 
 export function machinePaths(env: NodeJS.ProcessEnv): MachinePaths {
   const home = env.HOME || homedir();
-  const configDir = join(home, '.config', 'llmwiki');
+  const configDir = join(home, '.config', 'dotoriwiki');
   return {
-    envFile: env.LLMWIKI_ENV || join(configDir, 'gateway.env'),
+    envFile: env.DOTORIWIKI_ENV || join(configDir, 'gateway.env'),
     modelsFile: join(configDir, 'models.json'),
-    chatsDir: join(home, '.local', 'share', 'llmwiki', 'chats'),
+    chatsDir: join(home, '.local', 'share', 'dotoriwiki', 'chats'),
   };
 }
 
-export const GATEWAY_COMMITTER = { name: 'llmwiki-gateway', email: 'gateway@localhost' } as const;
+export const GATEWAY_COMMITTER = { name: 'dotoriwiki-gateway', email: 'gateway@localhost' } as const;
 
 /**
  * WIKI_ROOT, GATEWAY_TOKEN required; PORT (8787), HOST (127.0.0.1, set the Tailscale address),
  * CLAUDE_BIN (claude), CODEX_BIN (codex), YT_DLP_BIN (yt-dlp), MODELS_FILE
- * (~/.config/llmwiki/models.json), CHATS_DIR (~/.local/share/llmwiki/chats), COLLECT_FEEDS (on;
+ * (~/.config/dotoriwiki/models.json), CHATS_DIR (~/.local/share/dotoriwiki/chats), COLLECT_FEEDS (on;
  * `off` for a test gateway) optional.
  */
 export function loadConfig(env: NodeJS.ProcessEnv): Config {

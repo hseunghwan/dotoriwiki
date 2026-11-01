@@ -7,7 +7,7 @@
 set -euo pipefail
 
 REPO=${0:A:h:h}
-DEPLOY=${LLMWIKI_DEPLOY_DIR:-$HOME/llmwiki-gateway}
+DEPLOY=${DOTORIWIKI_DEPLOY_DIR:-$HOME/dotoriwiki-gateway}
 SHA=$(git -C $REPO rev-parse --verify "${1:-HEAD}^{commit}")
 
 if [[ ! -d $DEPLOY ]]; then
