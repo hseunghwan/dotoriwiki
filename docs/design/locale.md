@@ -368,11 +368,22 @@ Each item names the behavior it pins. The sketches of the first two run today (`
 
 ## Open questions
 
-- Should problem details (`page has no body`) be localized? They reach the model on a retry and the app as `failure.detail`. This design says no, because the app words `failure.code`.
 - Should P3's `init` write a localized line under `# log` telling Obsidian readers not to edit the file?
 - Should a gave-up line carry "interrupted", so the equality check on `gateway stopped mid-job` can go? That is outside P2.
-- Should English captions fall back to the video's spoken language? Today's Korean order is `ko`, then `en`. This design gives English `en` only.
-- `docs/plan.md`'s P2 row says ledger keywords become fixed ASCII tokens. Under C it would read "the meaning of ledger lines and verdicts becomes fixed ids, and the words stay in the wiki's language".
+
+Settled during implementation: problem details stay English in every locale, an English wiki takes `en` captions only, and `docs/plan.md`'s P2 row already reads as C.
+
+## Implementation notes
+
+P2 shipped as designed, with these differences in where things live. None changes an on-disk or wire format.
+
+- The pre-P2 parser is `scripts/legacy-ledger.ts`, a verbatim copy of `src/wiki/ledger.ts` at `5c579f9` with only its import path changed, so the audit has one oracle file that nobody edits.
+- `scripts/ledger-audit.ts` finds the logs with `git ls-tree` (every `<folder>/wiki/log.md` at HEAD) rather than through `dotoriwiki.yaml`, so it also runs on a wiki still on the older config and on folders no longer declared. It prints the logs, the jobs folded, and the jobs that differ.
+- Only `src/wiki/index.ts` may be imported from outside `src/wiki/` (`test/boundary.test.ts`), so it also re-exports `parseLedger`, `lineKey`, `verdictText`, and `JobHistory` for the audit.
+- The memo verdict is `MemoVerdict`, `{ id: VerdictId | null; text: string }`.
+- `pickSubtitle(info, langs)` takes `Text['captionLanguages']`, and `FeedPlan` gains `locale`, which `renderFeedMemo(label, item, timeZone, locale)` takes.
+- `scripts/confinement.ts` reads the scope line from `textFor(req.locale)`. The script wraps the model before the wiki opens, and the request's locale is the config's.
+- Before the switch, the audit on a clone of the author's live wiki folded 305 jobs in 4 logs with none differing.
 
 ## Synthesis decision
 
@@ -412,4 +423,4 @@ The candidate sketches stay outside the repo. In C's `sketch/`:
 - `ingest.ts` is `performIngest` converted, with the verdict boundary, `describePhoto`, and `renderPageTypes`.
 - `sources.ts` holds the memo link labels, `linksToFetch`, and `renderFeedMemo`.
 - `callers.ts` holds `#commitLedger`, `#commitFailure`, `#appendReview`, the memo verdict, `renderIndex`, the answer page body, `ChatContext`, and the wire field.
-- `ledger.test.ts` and `text.test.ts` run with `node --test ledger.test.ts text.test.ts` from `sketch/` (12 tests, passing). `tsc --noEmit -p .` there is clean. `node_modules` is a symlink to the repo's, for `yaml` and `@types/node`. `fixture-ledger/` holds the golden logs. `render-samples.ts` prints the English outputs shown in Usage.
+- `ledger.test.ts` and `text.test.ts` ran with `node --test ledger.test.ts text.test.ts` from `sketch/` (12 tests, passing). `tsc --noEmit -p .` there is clean. `node_modules` is a symlink to the repo's, for `yaml` and `@types/node`. `fixture-ledger/` holds the golden logs. `render-samples.ts` prints the English outputs shown in Usage.
