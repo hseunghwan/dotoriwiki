@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node src/main.ts",
+    "dotoriwiki": "node src/cli.ts",
     "check": "tsc --noEmit -p .",
     "test": "tsc --noEmit -p . && node --test test/*.test.ts",
     "e2e": "node scripts/e2e.ts",

@@ -6,6 +6,7 @@
 import type { Run } from './enrich.ts';
 import type { ShrinkPhoto } from './wiki/index.ts';
 
+export const SIPS = '/usr/bin/sips';
 const SHRINK_TIMEOUT_MS = 60_000;
 const LONG_EDGE = 2048;
 
@@ -17,7 +18,7 @@ export function longEdgeOf(sipsOutput: string): number | null {
 }
 
 /** The EXIF block, orientation included, is carried over. */
-export function sipsShrink(run: Run, bin = '/usr/bin/sips'): ShrinkPhoto {
+export function sipsShrink(run: Run, bin = SIPS): ShrinkPhoto {
   return async (src, dst) => {
     const size = await run(bin, ['-g', 'pixelWidth', '-g', 'pixelHeight', src], SHRINK_TIMEOUT_MS);
     const edge = size.code === 0 ? longEdgeOf(size.stdout) : null;
