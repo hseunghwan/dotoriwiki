@@ -3,10 +3,10 @@ const path = require('path');
 const { withAndroidManifest, withDangerousMod } = require('expo/config-plugins');
 
 // Shared text and photos (ACTION_SEND, ACTION_SEND_MULTIPLE) and the text-selection menu (PROCESS_TEXT)
-// all land in one translucent activity that turns the intent into llmwiki://compose?... and hands it to
+// all land in one translucent activity that turns the intent into <scheme>://compose?... and hands it to
 // MainActivity. The JS side then only ever sees a deep link, so expo-router opens the same compose sheet.
 // Shared photos are copied into the app's files before that: the URI grant ends with this activity.
-const kotlin = (pkg) => `package ${pkg}
+const kotlin = (pkg, scheme) => `package ${pkg}
 
 import android.app.Activity
 import android.content.Intent
@@ -58,7 +58,7 @@ class CaptureActivity : Activity() {
 
   private fun open(source: String, text: String?, subject: String?, photos: List<String>) {
     if (!text.isNullOrBlank() || photos.isNotEmpty()) {
-      val uri = Uri.Builder().scheme("llmwiki").authority("compose")
+      val uri = Uri.Builder().scheme("${scheme}").authority("compose")
         .appendQueryParameter("source", source)
         .apply { if (!text.isNullOrBlank()) appendQueryParameter("text", text) }
         .apply { if (!subject.isNullOrBlank()) appendQueryParameter("subject", subject) }
@@ -83,13 +83,15 @@ const filter = (action, mimeType) => ({
 module.exports = function withCaptureIntents(config) {
   const pkg = config.android?.package;
   if (!pkg) throw new Error('with-capture-intents: android.package is required');
+  const scheme = config.scheme;
+  if (typeof scheme !== 'string') throw new Error('with-capture-intents: one scheme is required');
 
   config = withDangerousMod(config, [
     'android',
     (cfg) => {
       const dir = path.join(cfg.modRequest.platformProjectRoot, 'app/src/main/java', ...pkg.split('.'));
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, 'CaptureActivity.kt'), kotlin(pkg));
+      fs.writeFileSync(path.join(dir, 'CaptureActivity.kt'), kotlin(pkg, scheme));
       return cfg;
     },
   ]);

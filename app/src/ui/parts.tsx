@@ -7,6 +7,7 @@ import type { Tone } from '../lib/memos';
 import { TitleMark } from './acorn-mark';
 import { Icon, type IconName } from './icon';
 import { useTheme, type Theme } from './theme';
+import { copy } from '../text';
 
 export function Screen({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const t = useTheme();
@@ -19,7 +20,7 @@ export function Header({ title, back, mark, right }: { title: string; back?: boo
   return (
     <View style={[s.header, { borderBottomColor: t.line, paddingHorizontal: back ? 8 : 16, justifyContent: back ? 'flex-start' : 'space-between' }]}>
       {back && (
-        <Pressable accessibilityRole="button" accessibilityLabel="뒤로" onPress={goBack} style={s.iconButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel={copy.common.back} onPress={goBack} style={s.iconButton}>
           <Icon name="back" color={t.fg} />
         </Pressable>
       )}
@@ -168,7 +169,7 @@ export function Sheet({ children, onClose }: { children: ReactNode; onClose: () 
   const insets = useSafeAreaInsets();
   return (
     <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-      <Pressable accessibilityLabel="닫기" onPress={onClose} style={[StyleSheet.absoluteFill, { backgroundColor: t.scrim }]} />
+      <Pressable accessibilityLabel={copy.common.close} onPress={onClose} style={[StyleSheet.absoluteFill, { backgroundColor: t.scrim }]} />
       <View style={[s.sheet, { backgroundColor: t.bg2, paddingBottom: 24 + insets.bottom }]}>
         <View style={[s.handle, { backgroundColor: t.handle }]} />
         {children}

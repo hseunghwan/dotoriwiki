@@ -48,7 +48,7 @@ it('reads a stored pairing back, and treats a corrupt one as unpaired', () => {
 
 describe('failure copy', () => {
   it('tells a QR user to bring the QR up again, and a manual user to check address and token', () => {
-    expect(pairingFailureCopy('qr', 'unreachable')).toBe('연결하지 못했어요. Tailscale이 켜져 있는지 확인하고, 맥미니에서 QR을 다시 띄워 주세요.');
+    expect(pairingFailureCopy('qr', 'unreachable')).toBe('연결하지 못했어요. Tailscale이 켜져 있는지 확인하고, 컴퓨터에서 QR을 다시 띄워 주세요.');
     expect(pairingFailureCopy('qr', 'unauthorized')).toContain('QR을 다시 띄워 주세요');
     expect(pairingFailureCopy('manual', 'unreachable')).toContain('Tailscale');
     expect(pairingFailureCopy('manual', 'unauthorized')).toContain('토큰');

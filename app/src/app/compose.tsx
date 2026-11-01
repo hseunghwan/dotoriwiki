@@ -12,8 +12,9 @@ import { Icon } from '../ui/icon';
 import { goBack, PrimaryButton, Sheet } from '../ui/parts';
 import { PhotoButtons, PhotoStrip, usePhotoDraft } from '../ui/photos';
 import { useTheme } from '../ui/theme';
+import { copy } from '../text';
 
-/** How long 저장 waits for the send before handing the user back to the app they came from. The row stays queued either way. */
+/** How long Save waits for the send before handing the user back to the app they came from. The row stays queued either way. */
 const SEND_GRACE_MS = 4_000;
 
 export default function Compose() {
@@ -42,7 +43,7 @@ export default function Compose() {
     goBack();
   }
 
-  if (!shared) return <Sheet onClose={goBack}><Text style={{ color: t.muted, fontSize: 14 }}>받은 글자가 없어요.</Text></Sheet>;
+  if (!shared) return <Sheet onClose={goBack}><Text style={{ color: t.muted, fontSize: 14 }}>{copy.compose.nothing}</Text></Sheet>;
   const card = shared.text ? preview(shared) : null;
   const text = memoText(shared, note);
 
@@ -59,7 +60,7 @@ export default function Compose() {
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <Sheet onClose={close}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ color: t.fg, fontSize: 17, fontWeight: '600' }}>LLM 위키에 저장</Text>
+          <Text style={{ color: t.fg, fontSize: 17, fontWeight: '600' }}>{copy.compose.title}</Text>
           <PhotoButtons draft={draft} />
         </View>
         {card && (
@@ -82,23 +83,23 @@ export default function Compose() {
         <PhotoStrip draft={draft} />
 
         <View style={{ gap: 6 }}>
-          <Text style={{ color: t.faint, fontSize: 12, fontWeight: '500' }}>한 줄 덧붙이기 (선택)</Text>
+          <Text style={{ color: t.faint, fontSize: 12, fontWeight: '500' }}>{copy.compose.note}</Text>
           <TextInput
-            accessibilityLabel="한 줄 덧붙이기"
+            accessibilityLabel={copy.compose.noteLabel}
             value={note}
             onChangeText={setNote}
-            placeholder="왜 저장하는지 적어 두면 요약이 더 좋아져요"
+            placeholder={copy.compose.notePlaceholder}
             placeholderTextColor={t.faint}
             style={[st.input, { borderColor: t.line2, backgroundColor: t.bg, color: t.fg }]}
           />
         </View>
 
         <View style={{ gap: 8 }}>
-          <Text style={{ color: t.faint, fontSize: 12, fontWeight: '500' }}>어디에 쌓을까요</Text>
+          <Text style={{ color: t.faint, fontSize: 12, fontWeight: '500' }}>{copy.common.whereToFile}</Text>
           <DomainChips value={hint} onChange={setHint} wrap />
         </View>
 
-        <PrimaryButton label={saving ? '저장하는 중' : '저장'} busy={saving} disabled={!canSend(text, draft.photos) || draft.busy} onPress={save} />
+        <PrimaryButton label={saving ? copy.common.saving : copy.common.save} busy={saving} disabled={!canSend(text, draft.photos) || draft.busy} onPress={save} />
       </Sheet>
       {draft.sheet}
     </KeyboardAvoidingView>

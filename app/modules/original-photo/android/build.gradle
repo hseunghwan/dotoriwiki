@@ -3,7 +3,7 @@ plugins {
   id 'expo-module-gradle-plugin'
 }
 
-group = 'com.cycle.llmwiki'
+group = 'dev.dotoriwiki'
 version = '0.1.0'
 
 android {

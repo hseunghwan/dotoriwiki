@@ -1,11 +1,11 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { withRo } from '../../lib/memos';
 import { startMove, useMove } from '../../moves';
 import { useApp } from '../../state';
 import { goBack, PrimaryButton, QuietButton, Sheet } from '../../ui/parts';
 import { useTheme } from '../../ui/theme';
+import { copy } from '../../text';
 
 export default function MoveSheet() {
   const t = useTheme();
@@ -25,7 +25,7 @@ export default function MoveSheet() {
   return (
     <Sheet onClose={goBack}>
       <View style={{ gap: 6 }}>
-        <Text style={{ color: t.fg, fontSize: 17, fontWeight: '600' }}>어디로 옮길까요</Text>
+        <Text style={{ color: t.fg, fontSize: 17, fontWeight: '600' }}>{copy.move.title}</Text>
         {text ? (
           <Text numberOfLines={3} style={{ color: t.muted, fontSize: 14, lineHeight: 21 }}>
             {text}
@@ -35,9 +35,9 @@ export default function MoveSheet() {
 
       {move?.status === 'moving' ? (
         <View style={[st.progress, { backgroundColor: t.bg, borderColor: t.cardLine }]}>
-          <Text style={{ color: t.fg, fontSize: 15, fontWeight: '500' }}>{withRo(move.to)} 옮기는 중이에요</Text>
+          <Text style={{ color: t.fg, fontSize: 15, fontWeight: '500' }}>{copy.move.moving(move.to)}</Text>
           <Text style={{ color: t.muted, fontSize: 13, lineHeight: 20 }}>
-            그 도메인에서 하던 정리가 끝나야 옮길 수 있어서 몇 분 걸릴 수 있어요. 닫아도 맥미니에서 계속 옮겨요.
+            {copy.move.movingNote}
           </Text>
         </View>
       ) : (
@@ -54,7 +54,7 @@ export default function MoveSheet() {
               >
                 <View style={[st.radio, { borderColor: on ? t.onFg : t.line2, borderWidth: on ? 6 : 2 }]} />
                 <Text style={{ flex: 1, color: t.fg, fontSize: 15, fontWeight: '500' }}>{d}</Text>
-                {d === from && <Text style={{ color: t.faint, fontSize: 12 }}>지금 여기</Text>}
+                {d === from && <Text style={{ color: t.faint, fontSize: 12 }}>{copy.move.current}</Text>}
               </Pressable>
             );
           })}
@@ -62,8 +62,8 @@ export default function MoveSheet() {
       )}
 
       {move?.status === 'failed' && <Text style={{ color: t.bad, fontSize: 13, lineHeight: 20 }}>{move.message}</Text>}
-      {move?.status !== 'moving' && <Text style={{ color: t.faint, fontSize: 12, lineHeight: 18 }}>옮기면 그 도메인에서 처음부터 다시 정리해요.</Text>}
-      {move?.status === 'moving' ? <QuietButton label="닫기" onPress={goBack} /> : <PrimaryButton label="옮기기" disabled={picked === from} onPress={go} />}
+      {move?.status !== 'moving' && <Text style={{ color: t.faint, fontSize: 12, lineHeight: 18 }}>{copy.move.restarts}</Text>}
+      {move?.status === 'moving' ? <QuietButton label={copy.common.close} onPress={goBack} /> : <PrimaryButton label={copy.move.go} disabled={picked === from} onPress={go} />}
     </Sheet>
   );
 }

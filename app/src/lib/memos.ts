@@ -1,3 +1,4 @@
+import { copy } from '../text';
 import type { OutboxFile, OutboxRow } from './outbox';
 import { photoCount } from './photos';
 import type { MemoListItemWire, MemoRequest, MemoStateWire, StatusResponse } from './wire';
@@ -8,15 +9,19 @@ export type Tone = 'wait' | 'route' | 'done' | 'warn' | 'bad';
 export type Stage = 'queued' | 'dead' | MemoStateWire;
 
 export const STAGE: Record<Stage, { label: string; tone: Tone }> = {
-  queued: { label: '전송 대기', tone: 'wait' },
-  dead: { label: '보내지 못함', tone: 'bad' },
-  inbox: { label: '받음', tone: 'wait' },
-  held: { label: '확인 필요', tone: 'warn' },
-  routed: { label: '정리 대기', tone: 'route' },
-  running: { label: '정리 중', tone: 'route' },
-  ingested: { label: '정리됨', tone: 'done' },
-  failed: { label: '실패', tone: 'bad' },
+  queued: { label: copy.stage.queued, tone: 'wait' },
+  dead: { label: copy.stage.dead, tone: 'bad' },
+  inbox: { label: copy.stage.inbox, tone: 'wait' },
+  held: { label: copy.stage.held, tone: 'warn' },
+  routed: { label: copy.stage.routed, tone: 'route' },
+  running: { label: copy.stage.running, tone: 'route' },
+  ingested: { label: copy.stage.ingested, tone: 'done' },
+  failed: { label: copy.stage.failed, tone: 'bad' },
 };
+
+/** The verdict in the phone's language. An older gateway sends no verdict_id, and text from before the gateway has a null one. */
+export const verdictText = (m: Pick<MemoListItemWire, 'verdict' | 'verdict_id'>): string | null =>
+  (m.verdict_id && copy.verdict[m.verdict_id]) || m.verdict;
 
 export type RecentMemo = {
   id: string;
@@ -41,7 +46,7 @@ function fromOutbox(row: OutboxRow, local: string[]): RecentMemo | null {
 }
 
 const fromServer = (m: MemoListItemWire): RecentMemo => ({
-  id: m.id, text: m.text, captured_at: m.captured_at, stage: m.state, domain: m.domain, first_page: m.first_page, verdict: m.verdict, photos: m.photos ?? 0, local: [],
+  id: m.id, text: m.text, captured_at: m.captured_at, stage: m.state, domain: m.domain, first_page: m.first_page, verdict: verdictText(m), photos: m.photos ?? 0, local: [],
 });
 
 /** Outbox rows and GET /memos, deduped by id. The gateway's copy wins: it knows more than "not sent yet". */
@@ -69,29 +74,26 @@ export function activityCounts(status: StatusResponse): { working: number; confi
 const pad = (n: number) => String(n).padStart(2, '0');
 const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-/** 오후 3:12 */
-export function clock12(d: Date): string {
-  const h = d.getHours();
-  return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${pad(d.getMinutes())}`;
-}
+/** 오후 3:12, 3:12 PM */
+export const clock12 = (d: Date): string => copy.time.clock(d);
 
 /** 15:12 */
 export const clock24 = (d: Date): string => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
-export const monthDay = (d: Date): string => `${d.getMonth() + 1}월 ${d.getDate()}일`;
+export const monthDay = (d: Date): string => copy.time.monthDay(d);
 
-/** 오늘, 어제, or 10월 27일, in the phone's local time. */
+/** Today, yesterday, or the date, in the phone's local time. */
 export function dayLabel(d: Date, now: Date): string {
-  if (sameDay(d, now)) return '오늘';
+  if (sameDay(d, now)) return copy.time.today;
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (sameDay(d, yesterday)) return '어제';
-  return d.getFullYear() === now.getFullYear() ? monthDay(d) : `${d.getFullYear()}년 ${monthDay(d)}`;
+  if (sameDay(d, yesterday)) return copy.time.yesterday;
+  return d.getFullYear() === now.getFullYear() ? monthDay(d) : copy.time.otherYear(d);
 }
 
-/** The 메모 tab's row time: 방금, 오후 3:12 today, 10월 27일 오후 3:12 before. */
+/** The 메모 tab's row time: just now, the clock today, the date and clock before. */
 export function recentTime(d: Date, now: Date): string {
-  if (now.getTime() - d.getTime() < 60_000) return '방금';
-  return sameDay(d, now) ? clock12(d) : `${monthDay(d)} ${clock12(d)}`;
+  if (now.getTime() - d.getTime() < 60_000) return copy.time.justNow;
+  return sameDay(d, now) ? clock12(d) : copy.time.dateTime(d);
 }
 
 export type DayGroup<T> = { label: string; items: T[] };
@@ -106,18 +108,4 @@ export function groupByDay<T>(items: readonly T[], now: Date, when: (item: T) =>
     else groups.push({ label, items: [item] });
   }
   return groups;
-}
-
-/** 스터디로, 미루기 아카이빙으로: 로 after a vowel or ㄹ, 으로 after other final consonants. */
-export function withRo(word: string): string {
-  const code = word.charCodeAt(word.length - 1) - 0xac00;
-  const jong = code >= 0 && code < 11172 ? code % 28 : 0;
-  return word + (jong === 0 || jong === 8 ? '로' : '으로');
-}
-
-/** 이 or 가, for "<domain>이 맞아요". */
-export function withIGa(word: string): string {
-  const code = word.charCodeAt(word.length - 1) - 0xac00;
-  const jong = code >= 0 && code < 11172 ? code % 28 : 0;
-  return word + (jong === 0 ? '가' : '이');
 }

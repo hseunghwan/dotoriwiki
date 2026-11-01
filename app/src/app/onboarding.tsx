@@ -9,6 +9,7 @@ import { pair, updateSettings, useApp } from '../state';
 import { Icon } from '../ui/icon';
 import { Card, Notice, PrimaryButton, QuietButton, Screen } from '../ui/parts';
 import { useTheme } from '../ui/theme';
+import { copy } from '../text';
 
 type Connect = {
   mode: PairingMode;
@@ -54,7 +55,7 @@ export default function Onboarding() {
   return (
     <Screen>
       {!repair && (
-        <View accessibilityLabel={`3단계 중 ${index + 1}단계`} style={st.steps}>
+        <View accessibilityLabel={copy.onboarding.steps(index + 1, 3)} style={st.steps}>
           {[0, 1, 2].map((i) => (
             <View key={i} style={[st.step, { backgroundColor: i <= index ? t.link : t.line2 }]} />
           ))}
@@ -82,14 +83,14 @@ function ConnectStep(props: {
   const [token, setToken] = useState('');
   const lede =
     props.repair === '401'
-      ? '맥미니의 토큰이 바뀌어서 메모를 보내지 못하고 있어요. 보내지 못한 메모는 휴대폰에 그대로 있어요. 맥미니에서 QR을 다시 띄워 연결해 주세요.'
-      : '집에 있는 맥미니가 메모를 받아서 위키로 정리해요. 휴대폰에서 Tailscale을 켠 다음, 맥미니에 띄운 연결용 QR을 비춰 주세요.';
+      ? copy.onboarding.repairLede
+      : copy.onboarding.lede;
 
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={st.main} keyboardShouldPersistTaps="handled">
         <View style={{ gap: 8 }}>
-          <Text style={[st.title, { color: t.fg }]}>{props.repair ? '다시 연결해요' : '맥미니에 연결해요'}</Text>
+          <Text style={[st.title, { color: t.fg }]}>{props.repair ? copy.onboarding.repairTitle : copy.onboarding.title}</Text>
           <Text style={[st.lede, { color: t.muted }]}>{lede}</Text>
         </View>
 
@@ -97,8 +98,8 @@ function ConnectStep(props: {
 
         {!connected && mode === 'manual' && (
           <View style={{ gap: 16 }}>
-            <Field label="맥미니 주소" value={addr} onChange={setAddr} placeholder="macmini.tail-xxxx.ts.net:8787" keyboardType="url" />
-            <Field label="토큰" value={token} onChange={setToken} placeholder="맥미니에 적어 둔 토큰" secure onSubmit={() => !checking && props.onCheck(parseManual(addr, token), 'manual')} />
+            <Field label={copy.onboarding.address} value={addr} onChange={setAddr} placeholder="my-computer.tail-xxxx.ts.net:8787" keyboardType="url" />
+            <Field label={copy.onboarding.token} value={token} onChange={setToken} placeholder={copy.onboarding.tokenPlaceholder} secure onSubmit={() => !checking && props.onCheck(parseManual(addr, token), 'manual')} />
           </View>
         )}
 
@@ -106,7 +107,7 @@ function ConnectStep(props: {
           <Notice tone="ok">
             <View accessibilityRole="text" style={st.row8}>
               <Icon name="checkCircle" size={18} color={t.okFg} />
-              <Text style={{ color: t.okFg, fontSize: 14, fontWeight: '500' }}>연결됐어요. 위키 {connected.length}개를 찾았어요.</Text>
+              <Text style={{ color: t.okFg, fontSize: 14, fontWeight: '500' }}>{copy.onboarding.found(connected.length)}</Text>
             </View>
             <View style={st.wrap6}>
               {connected.map((d) => (
@@ -129,20 +130,20 @@ function ConnectStep(props: {
 
         <View style={{ flex: 1 }} />
 
-        {!connected && mode === 'qr' && <QuietButton label="직접 입력" onPress={() => props.onMode('manual')} />}
+        {!connected && mode === 'qr' && <QuietButton label={copy.onboarding.manual} onPress={() => props.onMode('manual')} />}
         {!connected && mode === 'manual' && (
           <View style={{ gap: 8 }}>
             <PrimaryButton
               tall
-              label={checking ? '확인하는 중' : '연결 확인'}
+              label={checking ? copy.common.checking : copy.onboarding.check}
               busy={checking}
               disabled={addr.trim() === '' || token.trim() === ''}
               onPress={() => props.onCheck(parseManual(addr, token), 'manual')}
             />
-            <QuietButton label="QR로 연결하기" onPress={() => props.onMode('qr')} />
+            <QuietButton label={copy.onboarding.useQr} onPress={() => props.onMode('qr')} />
           </View>
         )}
-        {connected && <PrimaryButton tall label={props.repair ? '완료' : '다음'} onPress={props.onNext} />}
+        {connected && <PrimaryButton tall label={props.repair ? copy.onboarding.done : copy.onboarding.next} onPress={props.onNext} />}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -160,7 +161,7 @@ function QrView({ checking, onScan }: { checking: boolean; onScan: (data: string
   }
 
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel="QR 코드 찍기" onPress={live ? undefined : requestPermission} style={st.qr}>
+    <Pressable accessibilityRole="button" accessibilityLabel={copy.onboarding.scanQr} onPress={live ? undefined : requestPermission} style={st.qr}>
       {live && <CameraView style={StyleSheet.absoluteFill} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={scanned} />}
       <View style={st.frame}>
         <View style={[st.corner, { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 10 }]} />
@@ -168,7 +169,7 @@ function QrView({ checking, onScan }: { checking: boolean; onScan: (data: string
         <View style={[st.corner, { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 10 }]} />
         <View style={[st.corner, { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 10 }]} />
       </View>
-      <Text style={st.qrLabel}>{checking ? '읽는 중' : live ? '맥미니 QR을 네모 안에 맞춰 주세요' : '눌러서 카메라를 켜 주세요'}</Text>
+      <Text style={st.qrLabel}>{checking ? copy.onboarding.reading : live ? copy.onboarding.aimQr : copy.onboarding.tapForCamera}</Text>
     </Pressable>
   );
 }
@@ -206,18 +207,17 @@ function Field(props: {
 
 function LocationStep({ onChoose }: { onChoose: (allow: boolean) => void }) {
   const t = useTheme();
-  const points = ['메모를 쓰는 순간에만 위치를 확인해요.', '위치는 내 맥미니에만 저장돼요.', '메모마다 위치를 뺄 수 있고, 설정에서 언제든 끌 수 있어요.'];
   return (
     <View style={st.main}>
       <View style={[st.badge, { backgroundColor: t.onBg }]}>
         <Icon name="pin" size={26} color={t.onFg} />
       </View>
       <View style={{ gap: 8 }}>
-        <Text style={[st.title, { color: t.fg }]}>메모에 위치를 붙일까요</Text>
-        <Text style={[st.lede, { color: t.muted }]}>어디서 쓴 메모인지 남겨 두면 &quot;그때 거기서 무슨 생각 했지?&quot; 같은 질문에도 답할 수 있어요.</Text>
+        <Text style={[st.title, { color: t.fg }]}>{copy.onboarding.locationTitle}</Text>
+        <Text style={[st.lede, { color: t.muted }]}>{copy.onboarding.locationLede}</Text>
       </View>
       <View style={{ gap: 12 }}>
-        {points.map((p) => (
+        {copy.onboarding.locationPoints.map((p) => (
           <View key={p} style={{ flexDirection: 'row', gap: 10 }}>
             <Icon name="check" size={18} color={t.okFg} />
             <Text style={{ flex: 1, color: t.muted, fontSize: 14, lineHeight: 21 }}>{p}</Text>
@@ -226,8 +226,8 @@ function LocationStep({ onChoose }: { onChoose: (allow: boolean) => void }) {
       </View>
       <View style={{ flex: 1 }} />
       <View style={{ gap: 8 }}>
-        <PrimaryButton tall label="위치 허용" onPress={() => onChoose(true)} />
-        <QuietButton label="나중에" onPress={() => onChoose(false)} />
+        <PrimaryButton tall label={copy.onboarding.allowLocation} onPress={() => onChoose(true)} />
+        <QuietButton label={copy.onboarding.later} onPress={() => onChoose(false)} />
       </View>
     </View>
   );
@@ -241,22 +241,22 @@ function DoneStep({ location }: { location: boolean }) {
         <Icon name="check" size={26} color={t.okFg} />
       </View>
       <View style={{ gap: 8 }}>
-        <Text style={[st.title, { color: t.fg }]}>준비됐어요</Text>
-        <Text style={[st.lede, { color: t.muted }]}>대충 막 적어도 맥미니가 알아서 위키에 쌓아요.</Text>
+        <Text style={[st.title, { color: t.fg }]}>{copy.onboarding.readyTitle}</Text>
+        <Text style={[st.lede, { color: t.muted }]}>{copy.onboarding.readyLede}</Text>
       </View>
       <Card>
         <View style={[st.kv, { borderBottomWidth: 1, borderBottomColor: t.line }]}>
-          <Text style={{ color: t.muted, fontSize: 14 }}>맥미니</Text>
-          <Text style={{ color: t.okFg, fontSize: 14 }}>연결됨</Text>
+          <Text style={{ color: t.muted, fontSize: 14 }}>{copy.onboarding.computer}</Text>
+          <Text style={{ color: t.okFg, fontSize: 14 }}>{copy.common.connected}</Text>
         </View>
         <View style={st.kv}>
-          <Text style={{ color: t.muted, fontSize: 14 }}>위치 붙이기</Text>
-          <Text style={{ color: t.fg, fontSize: 14 }}>{location ? '켬' : '꺼짐'}</Text>
+          <Text style={{ color: t.muted, fontSize: 14 }}>{copy.common.attachLocation}</Text>
+          <Text style={{ color: t.fg, fontSize: 14 }}>{location ? copy.onboarding.on : copy.onboarding.off}</Text>
         </View>
       </Card>
-      <Text style={{ color: t.faint, fontSize: 13, lineHeight: 21 }}>다른 앱에서 공유하기를 누르거나 글자를 선택한 메뉴에서도 LLM 위키로 바로 보낼 수 있어요.</Text>
+      <Text style={{ color: t.faint, fontSize: 13, lineHeight: 21 }}>{copy.onboarding.shareHint}</Text>
       <View style={{ flex: 1 }} />
-      <PrimaryButton tall label="첫 메모 쓰기" onPress={() => router.replace('/')} />
+      <PrimaryButton tall label={copy.onboarding.firstMemo} onPress={() => router.replace('/')} />
     </View>
   );
 }

@@ -6,6 +6,7 @@ import { fromCamera } from '../pick';
 import { GallerySheet } from './gallery';
 import { Icon } from './icon';
 import { useTheme } from './theme';
+import { copy } from '../text';
 
 /** The photos on the memo being written, shared by the 메모 tab and the compose sheet. */
 export function usePhotoDraft() {
@@ -24,10 +25,10 @@ export function usePhotoDraft() {
     setBusy(true);
     try {
       const r = await fromCamera();
-      if (r === 'denied') setNotice('카메라를 쓸 수 있게 허용해 주세요');
+      if (r === 'denied') setNotice(copy.photos.cameraDenied);
       else if (r) add([r]);
     } catch {
-      setNotice('사진을 가져오지 못했어요');
+      setNotice(copy.photos.importFailed);
     } finally {
       setBusy(false);
     }
@@ -68,10 +69,10 @@ export function PhotoButtons({ draft }: { draft: PhotoDraft }) {
   return (
     <View style={st.buttons}>
       {draft.busy && <ActivityIndicator size="small" color={t.faint} />}
-      <Pressable accessibilityRole="button" accessibilityLabel="사진 고르기" disabled={full || draft.busy} onPress={draft.openGallery} style={[st.button, { borderColor: t.line2, opacity: full ? 0.4 : 1 }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={copy.photos.pick} disabled={full || draft.busy} onPress={draft.openGallery} style={[st.button, { borderColor: t.line2, opacity: full ? 0.4 : 1 }]}>
         <Icon name="image" size={16} color={t.muted} />
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="사진 찍기" disabled={full || draft.busy} onPress={draft.camera} style={[st.button, { borderColor: t.line2, opacity: full ? 0.4 : 1 }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={copy.photos.take} disabled={full || draft.busy} onPress={draft.camera} style={[st.button, { borderColor: t.line2, opacity: full ? 0.4 : 1 }]}>
         <Icon name="camera" size={16} color={t.muted} />
       </Pressable>
     </View>
@@ -87,8 +88,8 @@ export function PhotoStrip({ draft }: { draft: PhotoDraft }) {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} keyboardShouldPersistTaps="handled">
           {draft.photos.map((p, i) => (
             <View key={p.uri}>
-              <Image source={{ uri: p.uri }} resizeMethod="resize" style={[st.thumb, { backgroundColor: t.bg3 }]} accessibilityLabel={`사진 ${i + 1}${p.place ? `, ${p.place}` : ''}`} />
-              <Pressable accessibilityRole="button" accessibilityLabel={`사진 ${i + 1} 빼기`} hitSlop={8} onPress={() => draft.remove(p.uri)} style={[st.remove, { backgroundColor: t.scrim }]}>
+              <Image source={{ uri: p.uri }} resizeMethod="resize" style={[st.thumb, { backgroundColor: t.bg3 }]} accessibilityLabel={copy.photos.nth(i + 1, p.place ?? null)} />
+              <Pressable accessibilityRole="button" accessibilityLabel={copy.photos.remove(i + 1)} hitSlop={8} onPress={() => draft.remove(p.uri)} style={[st.remove, { backgroundColor: t.scrim }]}>
                 <Icon name="x" size={12} color="#ffffff" strokeWidth={2.5} />
               </Pressable>
             </View>
@@ -114,12 +115,12 @@ export function LocalThumbs({ uris }: { uris: readonly string[] }) {
   );
 }
 
-/** The small "사진 3" mark on a memo row. */
+/** The small photo count mark on a memo row. */
 export function PhotoCount({ count }: { count: number }) {
   const t = useTheme();
   if (count <= 0) return null;
   return (
-    <View style={st.count} accessibilityLabel={`사진 ${count}장`}>
+    <View style={st.count} accessibilityLabel={copy.photos.count(count)}>
       <Icon name="image" size={12} color={t.faint} />
       <Text style={{ color: t.faint, fontSize: 12 }}>{count}</Text>
     </View>

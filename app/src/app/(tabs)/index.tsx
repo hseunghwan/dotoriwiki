@@ -14,6 +14,7 @@ import { Header, Pill, PrimaryButton, s as ui, Screen, SectionTitle } from '../.
 import { DomainChips } from '../../ui/domain-chips';
 import { LocalThumbs, PhotoButtons, PhotoCount, PhotoStrip, usePhotoDraft } from '../../ui/photos';
 import { useTheme } from '../../ui/theme';
+import { copy } from '../../text';
 
 const SETTLED = new Set(['ingested', 'failed', 'dead', 'held']);
 
@@ -44,7 +45,7 @@ function ConnectionBadge({ waiting }: { waiting: number }) {
         style={[st.badge, { backgroundColor: t.bg3 }]}
       >
         <Icon name="alert" size={14} color={t.warn} />
-        <Text style={{ color: t.warn, fontSize: 12 }}>다시 연결 필요 · {waiting}개 대기</Text>
+        <Text style={{ color: t.warn, fontSize: 12 }}>{copy.memoTab.reconnect(waiting)}</Text>
       </Pressable>
     );
   }
@@ -52,12 +53,12 @@ function ConnectionBadge({ waiting }: { waiting: number }) {
   return reachable ? (
     <View style={[st.badge, { backgroundColor: t.bg2 }]}>
       <View style={[st.dot, { backgroundColor: t.okFg }]} />
-      <Text style={{ color: t.muted, fontSize: 12 }}>맥미니 연결됨</Text>
+      <Text style={{ color: t.muted, fontSize: 12 }}>{copy.memoTab.online}</Text>
     </View>
   ) : (
     <View style={[st.badge, { backgroundColor: t.bg3 }]}>
       <Icon name="wifiOff" size={14} color={t.warn} />
-      <Text style={{ color: t.warn, fontSize: 12 }}>오프라인 · {waiting}개 대기</Text>
+      <Text style={{ color: t.warn, fontSize: 12 }}>{copy.memoTab.offline(waiting)}</Text>
     </View>
   );
 }
@@ -153,12 +154,12 @@ export default function MemoTab() {
   return (
     <Screen>
       <Header
-        title="메모"
+        title={copy.common.memo}
         mark
         right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <ConnectionBadge waiting={waiting} />
-            <Pressable accessibilityRole="button" accessibilityLabel="설정" onPress={() => router.push('/settings')} style={ui.iconButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel={copy.common.settings} onPress={() => router.push('/settings')} style={ui.iconButton}>
               <Icon name="settings" color={t.muted} />
             </Pressable>
           </View>
@@ -169,11 +170,11 @@ export default function MemoTab() {
           <View style={[st.compose, { backgroundColor: t.bg2, borderColor: t.onLine }]}>
             <TextInput
               ref={input}
-              accessibilityLabel="메모 내용"
+              accessibilityLabel={copy.memoTab.input}
               multiline
               value={text}
               onChangeText={setText}
-              placeholder="떠오르는 대로 적어요. 어디에 쌓을지는 알아서 정해요."
+              placeholder={copy.memoTab.placeholder}
               placeholderTextColor={t.faint}
               style={[st.textarea, { color: t.fg }]}
               textAlignVertical="top"
@@ -187,23 +188,23 @@ export default function MemoTab() {
               {fix.kind === 'none' && attach && (
                 <Pressable accessibilityRole="button" onPress={refreshFix} style={[st.loc, { borderColor: t.line2, borderStyle: 'dashed' }]}>
                   <Icon name="pin" size={14} color={t.faint} />
-                  <Text style={{ color: t.faint, fontSize: 12 }}>위치 다시 찾기</Text>
+                  <Text style={{ color: t.faint, fontSize: 12 }}>{copy.memoTab.findLocationAgain}</Text>
                 </Pressable>
               )}
               {fix.kind !== 'off' &&
                 !(fix.kind === 'none' && attach) &&
                 (attach ? (
-                  <Pressable accessibilityRole="button" accessibilityLabel="위치 빼기" onPress={() => setAttach(false)} style={[st.loc, { borderColor: t.line2 }]}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={copy.memoTab.removeLocation} onPress={() => setAttach(false)} style={[st.loc, { borderColor: t.line2 }]}>
                     <Icon name="pin" size={14} color={t.muted} />
                     <Text style={{ color: t.muted, fontSize: 12 }}>
-                      {fix.kind === 'found' ? (fix.fix.place ?? '현재 위치') : '위치 찾는 중'}
+                      {fix.kind === 'found' ? (fix.fix.place ?? copy.memoTab.here) : copy.memoTab.findingLocation}
                     </Text>
                     <Icon name="x" size={12} color={t.muted} strokeWidth={2} />
                   </Pressable>
                 ) : (
                   <Pressable accessibilityRole="button" onPress={() => setAttach(true)} style={[st.loc, { borderColor: t.line2, borderStyle: 'dashed' }]}>
                     <Icon name="pin" size={14} color={t.faint} />
-                    <Text style={{ color: t.faint, fontSize: 12 }}>위치 붙이기</Text>
+                    <Text style={{ color: t.faint, fontSize: 12 }}>{copy.common.attachLocation}</Text>
                   </Pressable>
                 ))}
               <PhotoButtons draft={draft} />
@@ -211,19 +212,19 @@ export default function MemoTab() {
           </View>
 
           <View style={{ gap: 8 }}>
-            <SectionTitle>어디에 쌓을까요</SectionTitle>
+            <SectionTitle>{copy.common.whereToFile}</SectionTitle>
             <DomainChips value={hint} onChange={setHint} />
           </View>
 
-          <PrimaryButton label="보내기" icon="send" disabled={!canSend(text, draft.photos) || draft.busy} onPress={send} />
+          <PrimaryButton label={copy.common.send} icon="send" disabled={!canSend(text, draft.photos) || draft.busy} onPress={send} />
 
           <View style={{ gap: 4 }}>
-            <SectionTitle style={{ marginBottom: 4 }}>방금 보낸 메모</SectionTitle>
+            <SectionTitle style={{ marginBottom: 4 }}>{copy.memoTab.recent}</SectionTitle>
             {recent.length === 0 ? (
               <View style={st.empty}>
-                <Text style={{ color: t.muted, fontSize: 14 }}>아직 보낸 메모가 없어요</Text>
+                <Text style={{ color: t.muted, fontSize: 14 }}>{copy.memoTab.none}</Text>
                 <Text style={{ color: t.faint, fontSize: 13, lineHeight: 21, textAlign: 'center' }}>
-                  오늘 배운 것, 친구가 좋아한 것, 나중에 볼 영상.{'\n'}아무거나 한 줄이면 돼요.
+                  {copy.memoTab.noneHint}
                 </Text>
               </View>
             ) : (

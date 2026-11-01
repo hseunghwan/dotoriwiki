@@ -9,7 +9,7 @@ describe('failureSentence', () => {
     ['frontmatter', '페이지 정보에 꼭 필요한 항목이 빠졌어요.'],
     ['type', '이 도메인에 없는 종류의 페이지를 만들려고 했어요.'],
     ['empty', '내용이 빈 페이지를 만들었어요.'],
-    ['interrupted', '정리하는 도중 맥미니 서버가 다시 시작됐어요.'],
+    ['interrupted', '정리하는 도중 컴퓨터의 게이트웨이가 다시 시작됐어요.'],
     ['unknown', '정리하지 못했어요.'],
     ['something-new', '정리하지 못했어요.'],
   ])('%s', (code, text) => {

@@ -11,17 +11,18 @@ import { capture, useApp } from '../../state';
 import { Icon, type IconName } from '../../ui/icon';
 import { Chip, Screen, ScreenTitle } from '../../ui/parts';
 import { useTheme } from '../../ui/theme';
+import { copy } from '../../text';
 
 function chatFailure(f: Failure): string {
-  if (f.kind === 'unreachable') return '맥미니에 연결하지 못했어요.';
-  if (f.kind === 'http' && f.status === 404) return '이 대화는 지워졌어요. 새 대화에서 다시 물어봐 주세요.';
-  if (f.kind === 'http' && f.status === 409) return '이 대화의 앞 질문이 아직 끝나지 않았어요.';
-  return '답을 받지 못했어요.';
+  if (f.kind === 'unreachable') return copy.chat.unreachable;
+  if (f.kind === 'http' && f.status === 404) return copy.chat.gone;
+  if (f.kind === 'http' && f.status === 409) return copy.chat.busy;
+  return copy.chat.noAnswer;
 }
 
 const citedDomain = (cited: string) => (cited.includes('/wiki/') ? cited.split('/wiki/')[0]! : null);
 
-/** Where 답 저장 files the answer: the asked domain, or for 전체 the domain of the first cited page. */
+/** Where Save answer files it: the asked domain, or for all wikis the domain of the first cited page. */
 function answerDomain(target: string, turn: Turn): string | null {
   if (target !== ROOT) return target;
   for (const c of turn.cited) {
@@ -115,7 +116,7 @@ export default function Chat() {
     router.setParams({ open: undefined });
     void (async () => {
       const d = await gateway.chatDetail(pairing, open);
-      if (!d.ok) return setToast('대화를 열지 못했어요.');
+      if (!d.ok) return setToast(copy.chat.openFailed);
       setTarget(d.data.target);
       setConvs((all) => (isStreaming(all[d.data.target]) ? all : { ...all, [d.data.target]: fromDetail(d.data, all[d.data.target]) }));
     })();
@@ -172,7 +173,7 @@ export default function Chat() {
       id: answerId(sessionId, index), domain, question: turn.question, answer: turn.answer, cited: turn.cited, session_id: sessionId,
     });
     updateTurn(key, turn.key, (x) => ({ ...x, saved: r.ok ? 'saved' : 'failed' }));
-    setToast(r.ok ? `${domain} 위키의 answers에 저장했어요` : '저장하지 못했어요. 연결을 확인해 주세요.');
+    setToast(r.ok ? copy.chat.savedTo(domain) : copy.chat.saveFailed);
   }
 
   async function remember(key: string, turn: Turn) {
@@ -185,14 +186,14 @@ export default function Chat() {
     <Screen>
       <View style={[st.header, { borderBottomColor: t.line }]}>
         <View style={st.titleRow}>
-          <ScreenTitle title="질문" mark />
+          <ScreenTitle title={copy.chat.title} mark />
           <View style={{ flexDirection: 'row' }}>
-            <HeaderButton icon="plus" label="새 대화" disabled={busy || conv.turns.length === 0} onPress={() => update(target, () => EMPTY)} />
-            <HeaderButton icon="history" label="지난 대화" onPress={() => router.push('/chats')} />
+            <HeaderButton icon="plus" label={copy.chat.newChat} disabled={busy || conv.turns.length === 0} onPress={() => update(target, () => EMPTY)} />
+            <HeaderButton icon="history" label={copy.chat.pastChats} onPress={() => router.push('/chats')} />
           </View>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} accessibilityLabel="질문할 위키">
-          <Chip small label="전체" on={target === ROOT} onPress={() => setTarget(ROOT)} />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} accessibilityLabel={copy.chat.targets}>
+          <Chip small label={copy.common.all} on={target === ROOT} onPress={() => setTarget(ROOT)} />
           {domains.map((d) => (
             <Chip small key={d} label={d} on={target === d} onPress={() => setTarget(d)} />
           ))}
@@ -203,8 +204,8 @@ export default function Chat() {
         <ScrollView ref={scroll} contentContainerStyle={st.main} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })} keyboardShouldPersistTaps="handled">
           {conv.turns.length === 0 && (
             <View style={{ paddingVertical: 24, gap: 6, alignItems: 'center' }}>
-              <Text style={{ color: t.muted, fontSize: 14 }}>{target === ROOT ? '위키 전체에 물어봐요' : `${target} 위키에 물어봐요`}</Text>
-              <Text style={{ color: t.faint, fontSize: 13, lineHeight: 21, textAlign: 'center' }}>예: 내가 RAG에 대해 알아낸 게 뭐였지?</Text>
+              <Text style={{ color: t.muted, fontSize: 14 }}>{target === ROOT ? copy.chat.askAll : copy.chat.askDomain(target)}</Text>
+              <Text style={{ color: t.faint, fontSize: 13, lineHeight: 21, textAlign: 'center' }}>{copy.chat.example}</Text>
             </View>
           )}
           {conv.turns.map((turn, index) => {
@@ -218,7 +219,7 @@ export default function Chat() {
                   <ActButton
                     small
                     icon="pencil"
-                    label={turn.remembered === 'saved' ? (target === ROOT ? '메모로 남겼어요' : `${target}에 메모로 남겼어요`) : '기억하기'}
+                    label={turn.remembered === 'saved' ? (target === ROOT ? copy.chat.remembered : copy.chat.rememberedIn(target)) : copy.chat.remember}
                     on={turn.remembered === 'saved'}
                     onPress={() => remember(target, turn)}
                   />
@@ -235,7 +236,7 @@ export default function Chat() {
                       )}
                     </Text>
                   ) : turn.status === 'streaming' ? (
-                    <Text style={{ color: t.faint, fontSize: 15 }}>위키를 읽는 중…</Text>
+                    <Text style={{ color: t.faint, fontSize: 15 }}>{copy.chat.reading}</Text>
                   ) : null}
                   {turn.error && <Text style={{ color: t.bad, fontSize: 14, lineHeight: 21 }}>{turn.error}</Text>}
                   {turn.cited.length > 0 && (
@@ -251,9 +252,9 @@ export default function Chat() {
                   {turn.status === 'done' && turn.answer !== '' && (
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       {domain && (
-                        <ActButton icon="bookmark" label={turn.saved === 'saved' ? '저장됨' : turn.saved === 'saving' ? '저장하는 중' : '답 저장'} on={turn.saved === 'saved'} onPress={() => saveAnswer(target, turn, index)} />
+                        <ActButton icon="bookmark" label={turn.saved === 'saved' ? copy.chat.saved : turn.saved === 'saving' ? copy.common.saving : copy.chat.saveAnswer} on={turn.saved === 'saved'} onPress={() => saveAnswer(target, turn, index)} />
                       )}
-                      <ActButton icon="copy" label="복사" onPress={() => void Clipboard.setStringAsync(turn.answer)} />
+                      <ActButton icon="copy" label={copy.chat.copy} onPress={() => void Clipboard.setStringAsync(turn.answer)} />
                     </View>
                   )}
                 </View>
@@ -269,10 +270,10 @@ export default function Chat() {
         )}
         <View style={st.form}>
           <TextInput
-            accessibilityLabel="질문 입력"
+            accessibilityLabel={copy.chat.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder="위키에 물어보기"
+            placeholder={copy.chat.placeholder}
             placeholderTextColor={t.faint}
             onSubmitEditing={ask}
             returnKeyType="send"
@@ -280,7 +281,7 @@ export default function Chat() {
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="보내기"
+            accessibilityLabel={copy.common.send}
             accessibilityState={{ disabled: busy || draft.trim() === '' }}
             onPress={ask}
             style={[st.send, { backgroundColor: busy || draft.trim() === '' ? t.btnOff : t.btn }]}

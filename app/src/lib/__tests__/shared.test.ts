@@ -8,7 +8,7 @@ it('accepts only share and selection with some text', () => {
 });
 
 it('takes shared photos with or without text, file URIs only, at most 10', () => {
-  const a = 'file:///data/user/0/com.cycle.llmwiki/files/outbox/pending/a.jpg';
+  const a = 'file:///data/user/0/dev.dotoriwiki.app/files/outbox/pending/a.jpg';
   expect(parseShared({ source: 'share', photos: JSON.stringify([a]) })).toEqual({ source: 'share', text: '', subject: null, photos: [a] });
   expect(parseShared({ source: 'share', text: '여기', photos: JSON.stringify([a, 'content://media/1', '/etc/passwd', 3]) })?.photos).toEqual([a]);
   expect(parseShared({ source: 'share', photos: JSON.stringify(Array.from({ length: 12 }, () => a)) })?.photos).toHaveLength(10);

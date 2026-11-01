@@ -10,6 +10,7 @@ import { useNow } from '../ui/hooks';
 import { Icon } from '../ui/icon';
 import { Header, s as ui, Screen, SectionTitle } from '../ui/parts';
 import { useTheme } from '../ui/theme';
+import { copy } from '../text';
 
 type Row = { kind: 'day'; label: string } | { kind: 'chat'; chat: ChatSummaryWire };
 
@@ -27,12 +28,12 @@ function Entry({ chat, onDelete }: { chat: ChatSummaryWire; onDelete: () => void
           <View style={st.entryHead}>
             <Text style={{ color: t.muted, fontSize: 13 }}>{targetLabel(chat.target)}</Text>
             <Text style={{ color: t.faint, fontSize: 13 }}>·</Text>
-            <Text style={{ color: t.faint, fontSize: 13 }}>질문 {chat.turns}개</Text>
+            <Text style={{ color: t.faint, fontSize: 13 }}>{copy.chats.turns(chat.turns)}</Text>
           </View>
           <Text numberOfLines={1} style={{ color: t.fg, fontSize: 14, lineHeight: 20 }}>{chat.title}</Text>
         </View>
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={`${chat.title} 지우기`} onPress={onDelete} style={st.delete}>
+      <Pressable accessibilityRole="button" accessibilityLabel={copy.chats.remove(chat.title)} onPress={onDelete} style={st.delete}>
         <Icon name="trash" size={16} color={t.faint} />
       </Pressable>
     </View>
@@ -52,7 +53,7 @@ export default function Chats() {
   const refresh = useCallback(async () => {
     if (!pairing) return;
     const r = await gateway.chats(pairing, null);
-    if (!r.ok) return setError('지난 대화를 불러오지 못했어요. 연결을 확인해 주세요.');
+    if (!r.ok) return setError(copy.chats.loadFailed);
     setError(null);
     setChats(r.data.chats);
     setNext(r.data.next_before);
@@ -75,16 +76,16 @@ export default function Chats() {
   }
 
   function confirmDelete(chat: ChatSummaryWire) {
-    Alert.alert('이 대화를 지울까요?', '맥미니에 남은 대화 기록이 지워져요. 위키에 저장한 답은 그대로 남아요.', [
-      { text: '취소', style: 'cancel' },
+    Alert.alert(copy.chats.confirmTitle, copy.chats.confirmBody, [
+      { text: copy.common.cancel, style: 'cancel' },
       {
-        text: '지우기',
+        text: copy.common.delete,
         style: 'destructive',
         onPress: async () => {
           if (!pairing) return;
           const r = await gateway.deleteChat(pairing, chat.session_id);
           if (r.ok || (r.failure.kind === 'http' && r.failure.status === 404)) setChats((old) => old?.filter((c) => c.session_id !== chat.session_id) ?? null);
-          else setError('지우지 못했어요. 연결을 확인해 주세요.');
+          else setError(copy.chats.removeFailed);
         },
       },
     ]);
@@ -101,7 +102,7 @@ export default function Chats() {
 
   return (
     <Screen>
-      <Header title="지난 대화" back />
+      <Header title={copy.chats.title} back />
       <FlatList
         data={rows}
         keyExtractor={(r) => (r.kind === 'day' ? `day:${r.label}` : r.chat.session_id)}
@@ -116,9 +117,9 @@ export default function Chats() {
         }
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
-        ListFooterComponent={loadingMore ? <Text style={[ui.h2, { color: t.faint, textAlign: 'center', padding: 16 }]}>더 불러오는 중</Text> : undefined}
+        ListFooterComponent={loadingMore ? <Text style={[ui.h2, { color: t.faint, textAlign: 'center', padding: 16 }]}>{copy.common.loadingMore}</Text> : undefined}
         ListEmptyComponent={
-          chats ? <Text style={{ color: t.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>아직 나눈 대화가 없어요</Text> : undefined
+          chats ? <Text style={{ color: t.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>{copy.chats.empty}</Text> : undefined
         }
         refreshControl={
           <RefreshControl

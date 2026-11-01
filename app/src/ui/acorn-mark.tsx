@@ -4,9 +4,9 @@ import Animated, { Easing, useAnimatedProps, useAnimatedStyle, useSharedValue, w
 import Svg, { Path } from 'react-native-svg';
 import { addTap } from '../lib/taps';
 import { ACORN, ACORN_LINE_COLOR, ACORN_STROKE_WIDTH, ACORN_TILE_COLOR, ACORN_TILE_RADIUS, ACORN_VIEWBOX, pathLength, type AcornStroke } from './acorn';
+import { copy } from '../text';
 
-const STORY =
-  '다람쥐는 도토리를 아무 데나 대충 묻어요. 겨울엔 꺼내 먹고, 잊어버린 도토리는 참나무 숲이 돼요. 막 묻어 둔 한 줄을 필요할 때 꺼내 쓰고, 잊은 것도 언젠가 자라는 앱이에요.';
+const STORY = copy.acorn.story;
 
 // Android breaks Korean between any two syllables and React Native has no keep-all, so word
 // joiners hold each word together and lines break only at spaces, as the design does.
@@ -101,7 +101,7 @@ function AcornStory({ from, onClose }: { from: Rect; onClose: () => void }) {
 
   return (
     <Modal transparent statusBarTranslucent navigationBarTranslucent animationType="none" onRequestClose={onClose}>
-      <Pressable accessibilityLabel="도토리 이야기" accessibilityHint="누르면 닫혀요" onPress={onClose} style={StyleSheet.absoluteFill}>
+      <Pressable accessibilityLabel={copy.acorn.storyLabel} accessibilityHint={copy.acorn.tapToClose} onPress={onClose} style={StyleSheet.absoluteFill}>
         <Animated.View style={[StyleSheet.absoluteFill, st.scrim, scrimStyle]} />
         {/* Sized to the window, not the modal, so a keyboard hiding underneath cannot move the tile mid-zoom. */}
         <View style={[st.story, { width: screen.width, height: screen.height }]} pointerEvents="none">
@@ -137,7 +137,7 @@ export function TitleMark() {
 
   return (
     <>
-      <Pressable ref={ref} accessibilityRole="button" accessibilityLabel="도토리" onPress={onPress} hitSlop={8}>
+      <Pressable ref={ref} accessibilityRole="button" accessibilityLabel={copy.acorn.label} onPress={onPress} hitSlop={8}>
         <Tile size={28}>
           <Glyph size={20} />
         </Tile>
