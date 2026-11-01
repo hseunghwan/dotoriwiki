@@ -55,7 +55,7 @@ import {
 } from './config.ts';
 import { openGit, type AppendedLine, type Git } from './git.ts';
 import {
-  acquireLock, clearInflight, composeSystemPrompt, exists, layout, linkExclusive, listMarkdown, listNames,
+  acquireLock, clearInflight, composeSystemPrompt, exists, layout, linkExclusive, listMarkdown, listNames, lockHolder,
   readIfExists, readInflight, sweepTmp, unlinkQuiet, writeExclusive, writeInflight, type InflightMarker, type Layout,
 } from './layout.ts';
 import {
@@ -367,29 +367,70 @@ export interface Wiki {
   close(): Promise<void>;
 }
 
+/** What openWiki and the config rule look at, read without opening the wiki. */
+export type WikiCheck = {
+  readonly workTree: boolean;
+  /** null without a work tree to ask. */
+  readonly originalsIgnored: boolean | null;
+  /** null when dotoriwiki.yaml does not exist. A missing CLAUDE.md is one of its problems, as in a running gateway. */
+  readonly config: ConfigParse | null;
+  /** The pid of the live gateway holding .gateway/lock, or null. */
+  readonly lockedBy: number | null;
+};
+
+/** For `doctor`: takes no lock, writes nothing, commits nothing. */
+export async function checkWiki(root: string, machine: MachineFacts): Promise<WikiCheck> {
+  const lay = layout(await fs.realpath(root).catch(() => root));
+  const c = await inspect(lay, openGit(lay.root, { name: 'unused', email: 'unused@localhost' }), machine);
+  return { ...c, lockedBy: await lockHolder(lay.lockFile) };
+}
+
+async function inspect(lay: Layout, git: Git, machine: MachineFacts): Promise<Omit<WikiCheck, 'lockedBy'>> {
+  const workTree = await exists(join(lay.root, '.git'));
+  const text = await readIfExists(lay.configFile);
+  return {
+    workTree,
+    originalsIgnored: workTree ? await git.ignored('_originals/x.jpg') : null,
+    config: text === null ? null : await withSchemas(lay, parseWikiConfig(text, machine)),
+  };
+}
+
+/** The faults no edit of dotoriwiki.yaml can fix while running, or null. A file broken any other way opens paused. */
+function refusal(lay: Layout, c: Omit<WikiCheck, 'lockedBy'>): string | null {
+  if (!c.workTree) return `not a git work tree: ${lay.root}`;
+  if (!c.config) return `not a dotoriwiki wiki: ${lay.configFile} does not exist`;
+  const unknown = c.config.ok ? undefined : c.config.problems.find((p) => p.key === 'version');
+  if (unknown) return `${lay.configFile}: version ${unknown.problem}`;
+  if (!c.originalsIgnored) return '_originals/ must be listed in the wiki .gitignore: original photos keep their GPS and are never committed';
+  return null;
+}
+
+/** The config rule's second half: a config that parses still pauses while a CLAUDE.md it needs is missing. */
+async function withSchemas(lay: Layout, parsed: ConfigParse): Promise<ConfigParse> {
+  if (!parsed.ok) return parsed;
+  const missing: ConfigProblem[] = [];
+  if (!(await exists(lay.rootSchema))) missing.push({ key: 'CLAUDE.md', problem: 'the root CLAUDE.md does not exist', fix: 'create it; the classifier reads it to route memos' });
+  for (const d of parsed.config.domains.keys()) {
+    if (!(await exists(lay.domainSchema(d)))) missing.push({ key: `domains.${d}`, problem: `${d}/CLAUDE.md does not exist`, fix: `create ${d}/CLAUDE.md, or remove the entry` });
+  }
+  return missing.length ? { ok: false, problems: [...missing, ...parsed.warnings] } : parsed;
+}
+
 /**
- * Takes .gateway/lock and checks the faults no edit of dotoriwiki.yaml can fix while running: the
- * root is a git work tree and the file exists with a version this gateway reads. A file broken in
- * any other way opens paused. Removes a stale .git/index.lock and orphaned .tmp-* files, and
- * commits `init(<d>)` for every declared domain not yet in HEAD. Inflight markers are left to
- * runNext, so a crash and a thrown exception take the same recovery path.
+ * Takes .gateway/lock and refuses the faults in `refusal`. Removes a stale .git/index.lock and
+ * orphaned .tmp-* files, and commits `init(<d>)` for every declared domain not yet in HEAD.
+ * Inflight markers are left to runNext, so a crash and a thrown exception take the same recovery
+ * path.
  */
 export async function openWiki(root: string, opts: WikiOptions): Promise<Wiki> {
   // claude reports the paths it touched by real path, so a symlinked root (macOS tmpdir) must not count as outside.
   const lay = layout(await fs.realpath(root));
   const lock = await acquireLock(lay.lockFile);
   try {
-    if (!(await exists(join(lay.root, '.git')))) throw new Error(`not a git work tree: ${lay.root}`);
-    const text = await readIfExists(lay.configFile);
-    if (text === null) throw new Error(`not a dotoriwiki wiki: ${lay.configFile} does not exist`);
-    const version = parseWikiConfig(text, { modelProfiles: new Set() });
-    const unknown = version.ok ? undefined : version.problems.find((p) => p.key === 'version');
-    if (unknown) throw new Error(`${lay.configFile}: version ${unknown.problem}`);
     const git = openGit(lay.root, opts.committer);
+    const refused = refusal(lay, await inspect(lay, git, { modelProfiles: new Set() }));
+    if (refused) throw new Error(refused);
     await git.clearIndexLock();
-    if (!(await git.ignored('_originals/x.jpg'))) {
-      throw new Error('_originals/ must be listed in the wiki .gitignore: original photos keep their GPS and are never committed');
-    }
     await sweepTmp([lay.inboxDir, lay.inflightDir, lay.originalsDir, lay.attachmentsDir]);
     const wiki = new WikiImpl(lay, git, opts, lock);
     await wiki.bootstrap();
@@ -647,14 +688,7 @@ class WikiImpl implements Wiki {
     const text = await readIfExists(lay.configFile);
     if (text === null) return { ok: false, problems: [{ key: CONFIG_FILE, problem: 'does not exist', fix: 'restore it from git' }] };
     if (this.#parsed?.text !== text) this.#parsed = { text, parse: parseWikiConfig(text, this.#machine) };
-    const parsed = this.#parsed.parse;
-    if (!parsed.ok) return parsed;
-    const missing: ConfigProblem[] = [];
-    if (!(await exists(lay.rootSchema))) missing.push({ key: 'CLAUDE.md', problem: 'the root CLAUDE.md does not exist', fix: 'create it; the classifier reads it to route memos' });
-    for (const d of parsed.config.domains.keys()) {
-      if (!(await exists(lay.domainSchema(d)))) missing.push({ key: `domains.${d}`, problem: `${d}/CLAUDE.md does not exist`, fix: `create ${d}/CLAUDE.md, or remove the entry` });
-    }
-    return missing.length ? { ok: false, problems: [...missing, ...parsed.warnings] } : parsed;
+    return withSchemas(lay, this.#parsed.parse);
   }
 
   async config(): Promise<WikiConfig> {

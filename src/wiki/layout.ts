@@ -274,6 +274,18 @@ async function processStart(pid: number): Promise<string | null> {
 
 type LockBody = { readonly pid: number; readonly started: string };
 
+/** The pid of the live process holding the lock, or null when there is no lock or it is stale. Only reads. */
+export async function lockHolder(path: string): Promise<number | null> {
+  const held = await readIfExists(path);
+  let body: LockBody | null = null;
+  try {
+    body = held ? (JSON.parse(held) as LockBody) : null;
+  } catch {
+    body = null;
+  }
+  return body && (await processStart(body.pid)) === body.started ? body.pid : null;
+}
+
 /**
  * One gateway per wiki root. The lock file records (pid, process start time). A lock whose
  * pid is gone, or whose pid now belongs to a process started at another time, is stale.
@@ -288,16 +300,8 @@ export async function acquireLock(path: string): Promise<{ release(): Promise<vo
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
     }
-    const held = await readIfExists(path);
-    let body: LockBody | null = null;
-    try {
-      body = held ? (JSON.parse(held) as LockBody) : null;
-    } catch {
-      body = null;
-    }
-    if (body && (await processStart(body.pid)) === body.started) {
-      throw new Error(`wiki is locked by a running gateway (pid ${body.pid}): ${path}`);
-    }
+    const pid = await lockHolder(path);
+    if (pid !== null) throw new Error(`wiki is locked by a running gateway (pid ${pid}): ${path}`);
     await unlinkQuiet(path);
   }
   throw new Error(`could not take the lock: ${path}`);
