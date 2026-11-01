@@ -7,7 +7,7 @@
     "node": ">=24.22"
   },
   "scripts": {
-    "start": "node src/main.ts",
+    "start": "node src/cli.ts start",
     "dotoriwiki": "node src/cli.ts",
     "check": "tsc --noEmit -p .",
     "test": "tsc --noEmit -p . && node --test test/*.test.ts",

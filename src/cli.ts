@@ -4,23 +4,31 @@
  *   init [dir] [--locale en|ko]   a new wiki from a preset (dir defaults to the current folder),
  *                                 and this machine's env file pointing at it
  *   doctor                        whether this machine and its wiki are ready; exits 1 on a fail
+ *   start                         the gateway in this process, on the env file's settings under
+ *                                 the environment's
  */
 
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { doctor, type Check } from './doctor.ts';
 import { initWiki, localeFromEnv } from './init.ts';
+import { startGateway } from './main.ts';
 import type { Locale } from './wiki/index.ts';
 
-const USAGE = 'usage: dotoriwiki init [dir] [--locale en|ko]\n       dotoriwiki doctor';
+const USAGE = 'usage: dotoriwiki init [dir] [--locale en|ko]\n       dotoriwiki doctor\n       dotoriwiki start';
 const LANGUAGE: Record<Locale, string> = { en: 'an English', ko: 'a Korean' };
 
 function formatCheck(c: Check): string {
   return `${c.status.padEnd(4)}  ${c.what}${c.fix ? `\n      fix: ${c.fix}` : ''}`;
 }
 
-async function main(argv: readonly string[], env: NodeJS.ProcessEnv): Promise<number> {
+/** An exit code, or null for a command that keeps running. */
+async function main(argv: readonly string[], env: NodeJS.ProcessEnv): Promise<number | null> {
   const [command, ...rest] = argv;
+  if (command === 'start' && rest.length === 0) {
+    await startGateway(env);
+    return null;
+  }
   if (command === 'doctor' && rest.length === 0) {
     const checks = await doctor(env);
     for (const c of checks) console.log(formatCheck(c));
@@ -56,7 +64,7 @@ async function main(argv: readonly string[], env: NodeJS.ProcessEnv): Promise<nu
 }
 
 main(process.argv.slice(2), process.env).then(
-  (code) => process.exit(code),
+  (code) => code === null || process.exit(code),
   (e) => {
     console.error((e as Error).message);
     process.exit(1);

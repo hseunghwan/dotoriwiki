@@ -1,7 +1,10 @@
 /**
- * Wiring only. Run with `node src/main.ts` (Node 24 type stripping, no build step).
+ * Wiring only. `dotoriwiki start` runs it, or `npm start` in a checkout (Node 24 type stripping, no
+ * build step).
  *
  * Module map (→ = imports):
+ *
+ *   cli.ts ─→ main.ts, init.ts, doctor.ts
  *
  *   main.ts ─→ http.ts ─→ wiki/index.ts        public Wiki surface, domain types, Llm port
  *      │          ├────→ wire.ts ─→ wiki/index.ts   the memo write path, domain → wire mappings
@@ -40,7 +43,7 @@ import { sipsShrink } from './shrink.ts';
 import { FEEDS, pollFeeds } from './feeds.ts';
 import { startHttp } from './http.ts';
 import { startLoops } from './loops.ts';
-import { GATEWAY_COMMITTER, loadConfig } from './machine.ts';
+import { GATEWAY_COMMITTER, loadConfig, machineEnv, type Config } from './machine.ts';
 import { loadModels, profileNames, routeLlm } from './models.ts';
 import { openWiki } from './wiki/index.ts';
 
@@ -50,8 +53,17 @@ function serverVersion(): string {
 
 const log = (where: string, data: object) => console.error(JSON.stringify({ t: new Date().toISOString(), where, ...data }));
 
-async function main(): Promise<void> {
-  const cfg = loadConfig(process.env);
+/** Runs the gateway until SIGTERM or SIGINT, on the env file's settings under `env`. */
+export async function startGateway(env: NodeJS.ProcessEnv): Promise<void> {
+  try {
+    await serve(loadConfig(await machineEnv(env)));
+  } catch (e) {
+    log('main', { fatal: (e as Error).message });
+    process.exit(1);
+  }
+}
+
+async function serve(cfg: Config): Promise<void> {
   const models = loadModels(cfg.modelsFile);
   const claude = claudeCli({ bin: cfg.claudeBin, chat: models.chat });
   const codex = codexCli({ bin: cfg.codexBin });
@@ -102,8 +114,3 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
 }
-
-main().catch((e) => {
-  log('main', { fatal: (e as Error).message });
-  process.exit(1);
-});

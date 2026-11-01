@@ -69,8 +69,8 @@ const token = machineEnv.GATEWAY_TOKEN!;
 section(`fresh ${locale} wiki at ${root}, env file ${envFile}`);
 
 const logFile = join(work, 'gateway.log');
-const server = spawn(process.execPath, [join(app, 'src', 'main.ts')], {
-  env: { ...process.env, ...machineEnv, PORT: '0', CHATS_DIR: join(work, 'chats'), MODELS_FILE: join(work, 'models.json'), COLLECT_FEEDS: 'off' },
+const server = spawn(process.execPath, [join(app, 'src', 'cli.ts'), 'start'], {
+  env: { ...process.env, DOTORIWIKI_ENV: envFile, PORT: '0', CHATS_DIR: join(work, 'chats'), MODELS_FILE: join(work, 'models.json'), COLLECT_FEEDS: 'off' },
   stdio: ['ignore', 'inherit', 'pipe'],
 });
 const log = createWriteStream(logFile);

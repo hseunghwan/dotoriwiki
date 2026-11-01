@@ -9,7 +9,7 @@ import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execRun, type Run } from './enrich.ts';
-import { loadConfig, machinePaths, parseEnvFile, type Config } from './machine.ts';
+import { loadConfig, machinePaths, withEnvFile, type Config } from './machine.ts';
 import { loadModels, profileNames, type Models } from './models.ts';
 import { SIPS } from './shrink.ts';
 import { checkWiki, CONFIG_FILE } from './wiki/index.ts';
@@ -79,7 +79,7 @@ async function engines(): Promise<string> {
   return (JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8')) as { engines: { node: string } }).engines.node;
 }
 
-/** The env file merged over the process env, as launchd's `source` does, then loadConfig. */
+/** The env file under the process env, as `start` reads it, then loadConfig. */
 async function envConfig(env: NodeJS.ProcessEnv, add: (status: CheckStatus, what: string, fix?: string | null) => void): Promise<Config | null> {
   const file = machinePaths(env).envFile;
   let text: string;
@@ -93,7 +93,7 @@ async function envConfig(env: NodeJS.ProcessEnv, add: (status: CheckStatus, what
   if (((await fs.stat(file)).mode & 0o077) !== 0) add('warn', `${file} is readable by other users, and it holds the gateway token`, `chmod 600 ${file}`);
   let cfg: Config;
   try {
-    cfg = loadConfig({ ...env, ...Object.fromEntries(parseEnvFile(text)) });
+    cfg = loadConfig(withEnvFile(env, text));
   } catch (e) {
     add('fail', `${file}: ${(e as Error).message}`, `edit ${file}`);
     return null;

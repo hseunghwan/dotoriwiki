@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
 import { doctor, type Check } from '../src/doctor.ts';
 import { initWiki } from '../src/init.ts';
@@ -130,4 +131,32 @@ test('the command line: init picks the locale from LANG and quotes a path with a
   const ok = await run(['doctor']);
   assert.equal(ok.code, 0, ok.out);
   assert.match(ok.out, /^pass {2}dotoriwiki\.yaml parses: 일상, 스터디, 미루기 아카이빙/m);
+});
+
+test('start reads the env file init wrote, a variable in the environment wins over it, and SIGTERM stops it', async () => {
+  const { dir, env, envFile } = await machine();
+  await initWiki(join(dir, 'wiki'), 'en', env);
+  const token = parseEnvFile(await fs.readFile(envFile, 'utf8')).get('GATEWAY_TOKEN')!;
+  const gateway = spawn(process.execPath, [cli, 'start'], { env: { ...env, PORT: '0', COLLECT_FEEDS: 'off' }, stdio: ['ignore', 'ignore', 'pipe'] });
+  const exited = new Promise<number | null>((done) => gateway.on('exit', done));
+  const url = await new Promise<string>((done, fail) => {
+    createInterface({ input: gateway.stderr! }).on('line', (line) => {
+      const m = /"listening":"(http:[^"]+)"/.exec(line);
+      if (m) done(m[1]!);
+    });
+    void exited.then((code) => fail(new Error(`start exited ${code}`)));
+  });
+  assert.notEqual(url, 'http://127.0.0.1:8787', 'PORT from the environment, not the file');
+  const res = await fetch(`${url}/status`, { headers: { authorization: `Bearer ${token}` } });
+  assert.equal(res.status, 200);
+  assert.deepEqual(Object.keys(((await res.json()) as { domains: object }).domains), ['journal', 'learning', 'someday']);
+  gateway.kill('SIGTERM');
+  assert.equal(await exited, 0);
+});
+
+test('start without an env file exits 1 and says to run init', async () => {
+  const { env, envFile } = await machine();
+  const r = await execFileP(process.execPath, [cli, 'start'], { env }).then(() => assert.fail('start exited 0'), (e: { code: number; stderr: string }) => e);
+  assert.equal(r.code, 1);
+  assert.ok(r.stderr.includes(`"fatal":"${envFile} does not exist. Run \`dotoriwiki init\` first`), r.stderr);
 });

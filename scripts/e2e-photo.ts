@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import type { MemoDetailWire, MemoRequest, StatusResponse } from '../src/api.ts';
+import { envLine } from '../src/machine.ts';
 import { jpegWithExif } from '../test/exif.ts';
 
 const source = process.argv[2] ?? process.env.WIKI_ROOT;
@@ -45,8 +46,10 @@ const coast = jpegWithExif({
 const sonoma = await fs.readFile(join(PICTURES, 'Sonoma.heic'));
 
 const logFile = join(work, 'gateway.log');
-const server = spawn(process.execPath, [join(app, 'src', 'main.ts')], {
-  env: { ...process.env, WIKI_ROOT: root, CHATS_DIR: join(work, 'chats'), PORT: '0', GATEWAY_TOKEN: token, COLLECT_FEEDS: 'off' },
+const envFile = join(work, 'gateway.env');
+await fs.writeFile(envFile, `${envLine('WIKI_ROOT', root)}\n${envLine('GATEWAY_TOKEN', token)}\n`, { mode: 0o600 });
+const server = spawn(process.execPath, [join(app, 'src', 'cli.ts'), 'start'], {
+  env: { ...process.env, DOTORIWIKI_ENV: envFile, CHATS_DIR: join(work, 'chats'), PORT: '0', COLLECT_FEEDS: 'off' },
   stdio: ['ignore', 'inherit', 'pipe'],
 });
 const log = createWriteStream(logFile);
