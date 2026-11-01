@@ -1,7 +1,8 @@
 /**
- * Wire contract shared with clients: HTTP Shortcuts today, the Expo app later, which imports
- * this file as-is. Plain JSON shapes in snake_case. No imports, no logic. http.ts parses these
- * into domain types, and nothing past http.ts sees them.
+ * Wire contract shared with clients: HTTP Shortcuts and the Expo app. Plain JSON shapes in
+ * snake_case. No imports, no logic. http.ts parses these into domain types, and nothing past
+ * http.ts sees them. The app builds without this tree, so it keeps a byte copy at
+ * app/src/lib/wire.ts, and test/app-wire.test.ts fails when the two differ.
  */
 
 export type MemoSourceWire = 'typed' | 'share' | 'selection' | 'voice' | 'chat' | 'feed' | 'agent';
