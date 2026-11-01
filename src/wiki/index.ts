@@ -70,6 +70,7 @@ import {
   attachmentName, describePhoto, photoFacts, photoLocation, photoStem, sha256Hex, sniffPhoto, type Attachment, type AttachmentRequest,
 } from './photos.ts';
 import { isoWithOffset, linksToFetch, renderSourceFile } from './sources.ts';
+import { textFor, type Text } from './text.ts';
 
 export type { ConfigParse, ConfigProblem, DomainConfig, FeedName, Locale, MachineFacts, ModelProfile, PageTypeSpec, TimeZone, WikiConfig } from './config.ts';
 export { CONFIG_FILE, CONFIG_VERSION, FEED_NAMES, WikiConfigError, domainIn, parseWikiConfig } from './config.ts';
@@ -80,7 +81,9 @@ export { pageRefString, parseAnswerId, parseMemo, parseMemoId } from './pages.ts
 export type { SourceEntry, SourceFile } from './sources.ts';
 export type { Attachment, AttachmentRequest, PhotoDevice, PhotoOrigin } from './photos.ts';
 export { describeDevice, MAX_PHOTO_BYTES, MAX_PHOTOS } from './photos.ts';
-export { isoWithOffset, parseSourceFile } from './sources.ts';
+export { isoWithOffset, MEMO_LINK_LABELS, parseSourceFile } from './sources.ts';
+export type { Text } from './text.ts';
+export { textFor } from './text.ts';
 
 
 /** A domain declared in dotoriwiki.yaml. NFC. Minted only by parseWikiConfig. */
@@ -238,7 +241,7 @@ export type Status = { readonly inbox: number; readonly paused: boolean; readonl
 
 export type ChatTarget = { readonly kind: 'root' } | { readonly kind: 'domain'; readonly domain: DomainName };
 /** Where a read-only chat runs and what it is told. systemPrompt is CLAUDE.md with `@` imports inlined. */
-export type ChatContext = { readonly cwd: string; readonly systemPrompt: string };
+export type ChatContext = { readonly cwd: string; readonly systemPrompt: string; readonly locale: Locale };
 
 /** A file appeared that may create work. Only a hint: missing one costs latency, never correctness. */
 export type Wake =
@@ -251,6 +254,7 @@ export type Wake =
 export type Unavailable = { readonly kind: 'unavailable'; readonly reason: string; readonly retryAfterMs: number };
 
 export type ClassifyRequest = {
+  readonly locale: Locale;
   readonly systemPrompt: string;
   readonly text: string;
   /** Becomes the JSON-schema enum, so the list is never hand-kept. */
@@ -264,6 +268,7 @@ export type Classification =
 export type EditRequest = {
   /** The domain's model_profile; null is edit.default. */
   readonly modelProfile: ModelProfile | null;
+  readonly locale: Locale;
   readonly cwd: string;
   readonly systemPrompt: string;
   readonly prompt: string;
@@ -292,8 +297,8 @@ export type SourceKind = 'video' | 'article';
 export type FetchedSource =
   | { readonly kind: SourceKind; readonly status: 'ok'; readonly title: string; readonly text: string }
   | { readonly kind: SourceKind; readonly status: 'failed'; readonly title: string | null; readonly detail: string };
-/** A rejection fails the job attempt like any other thrown error. */
-export type FetchSource = (url: string) => Promise<FetchedSource>;
+/** A rejection fails the job attempt like any other thrown error. `locale` words the text it writes. */
+export type FetchSource = (url: string, locale: Locale) => Promise<FetchedSource>;
 
 /** Writes `dst` as a JPEG no longer than 2048 px on its long edge. Rejects when it cannot read `src`. */
 export type ShrinkPhoto = (src: string, dst: string) => Promise<void>;
@@ -445,45 +450,34 @@ async function enrichIngest(env: Env, job: Extract<Job, { kind: 'ingest' }>): Pr
   const urls = memo.ok ? linksToFetch(memo.value.memo.text, memo.value.memo.source) : [];
   if (!urls.length) return job;
   const sources = [];
-  for (const url of urls) sources.push({ url, ...(await env.fetchSource(url)) });
-  await writeExclusive(env.layout.rawDir(domain), name, renderSourceFile({ memo: id as MemoId, fetchedAt: env.stamp(), sources }));
+  for (const url of urls) sources.push({ url, ...(await env.fetchSource(url, env.config.locale)) });
+  await writeExclusive(env.layout.rawDir(domain), name, renderSourceFile({ memo: id as MemoId, fetchedAt: env.stamp(), sources }, textFor(env.config.locale)));
   return { ...job, inputs: [...job.inputs, rel] };
 }
 
-const ingestRules = (date: string, types: readonly string[]) => `## 서버가 정한 작업 규칙
-
-- 오늘 날짜는 ${date}다. 만들거나 고친 페이지의 \`updated\`에 쓴다.
-- 쓰기는 \`wiki/\` 아래에서만 한다. \`raw/\`, \`CLAUDE.md\`, 다른 도메인 폴더는 고치지 않는다.
-- \`wiki/index.md\`와 \`wiki/log.md\`는 서버가 쓴다. 읽기만 한다.
-- \`wiki/answers/\`는 저장된 질문 답이다. 정리 근거로 쓰지 않고 고치지 않는다.
-- 페이지 frontmatter에는 ${PAGE_FIELDS.map((f) => `\`${f}\``).join(', ')}를 모두 단다. \`type\`은 ${types.map((t) => `\`${t}\``).join(', ')} 중 하나다.
-- \`[[링크]]\`는 이미 있거나 이번에 만드는 위키 페이지에만 건다. 원본 id는 링크로 걸지 말고 \`sources\`와 본문에 글자로 적는다.
-- 사진은 원본에 붙은 것만 \`![[파일명]]\`으로 넣는다. 사진에서 보이는 내용은 사진에서 본 것이라고 밝혀 적는다.
-- 빈 파일이나 본문 없는 페이지를 만들지 않는다.
-- 끝나면 판정(\`verdict\`)과 만들거나 고친 페이지의 \`wiki/\` 기준 경로 목록(\`pages\`)을 구조화된 응답으로 돌려준다.`;
-
 async function performIngest(env: Env, job: Extract<Job, { kind: 'ingest' }>, ctx: JobCtx): Promise<Performed> {
+  const { locale } = env.config;
+  const t = textFor(locale);
   const cwd = env.layout.domainDir(job.ref.domain);
   const id = job.ref.id;
   const memo = parseMemoFile(await fs.readFile(join(cwd, 'raw', `${id}.md`), 'utf8'));
   const photos = (memo.ok ? memo.value.memo.attachments : []).filter((a) => job.inputs.includes(env.layout.attachmentRel(a.file)));
   const images = photos.map((a) => join(env.layout.attachmentsDir, a.file));
-  const prompt = [
-    `원본 \`raw/${id}.md\` 하나를 정리 작업 순서대로 위키에 반영해라.`,
-    job.inputs.some((p) => p.endsWith('.source.md')) ? `수집 자료 \`raw/${id}.source.md\`도 함께 읽는다.` : '',
-    photos.length
-      ? [
-          `원본에 사진 ${photos.length}장이 붙어 있다. 각 파일을 Read로 열어 보고 무엇이 찍혔는지 정리에 반영한다. 페이지에 넣을 때는 \`![[파일명]]\`으로 쓴다.`,
-          ...photos.map((a, i) => `- \`${images[i]}\` (\`![[${a.file}]]\`) ${describePhoto(a, i)}`),
-        ].join('\n')
-      : '',
-    ctx.history.lastFailure ? `\n지난 시도는 서버 검사에서 실패해 되돌려졌다. 이유: ${ctx.history.lastFailure.reason}\n같은 문제가 없도록 처음부터 다시 해라.` : '',
-  ].filter(Boolean).join('\n');
   const result = await env.llm.edit({
     modelProfile: ctx.domain.modelProfile,
+    locale,
     cwd,
-    systemPrompt: `${await composeSystemPrompt(env.layout.domainSchema(job.ref.domain))}\n\n${renderPageTypes(ctx.domain)}\n\n${ingestRules(env.today(), ctx.domain.pageTypes.map((t) => t.type))}`,
-    prompt,
+    systemPrompt: [
+      await composeSystemPrompt(env.layout.domainSchema(job.ref.domain)),
+      renderPageTypes(ctx.domain, t),
+      t.ingest.rules({ date: env.today(), fields: PAGE_FIELDS, types: ctx.domain.pageTypes.map((p) => p.type) }),
+    ].join('\n\n'),
+    prompt: t.ingest.prompt({
+      id,
+      hasSource: job.inputs.some((p) => p.endsWith('.source.md')),
+      photos: photos.map((a, i) => ({ path: images[i]!, file: a.file, line: describePhoto(a, i, t) })),
+      lastFailure: ctx.history.lastFailure?.reason ?? null,
+    }),
     timeoutMs: env.ingestTimeoutMs,
     writableDir: 'wiki',
     verdicts: INGEST_VERDICTS,
@@ -501,7 +495,7 @@ function ingestVerdict(r: Extract<EditResult, { kind: 'finished' }>): Performed 
 
 async function performFileAnswer(env: Env, job: Extract<Job, { kind: 'file-answer' }>, ctx: JobCtx): Promise<Performed> {
   const wikiDir = env.layout.wikiDir(job.ref.domain);
-  const { pathUnderWiki, content } = renderAnswerPage(job.filing, env.today(), new Set(await listMarkdown(wikiDir)));
+  const { pathUnderWiki, content } = renderAnswerPage(job.filing, env.today(), new Set(await listMarkdown(wikiDir)), textFor(env.config.locale));
   const abs = join(wikiDir, ...pathUnderWiki.split('/'));
   ctx.touch(abs);
   await fs.mkdir(dirname(abs), { recursive: true });
@@ -607,11 +601,11 @@ const orderKey = (iso: string, id: string) => `${String(Date.parse(iso) || 0).pa
  * The project is a strong hint the memo text alone may not carry, e.g. 스터디 versus 개발소식.
  * Photos go in as their metadata line; the classifier never sees pixels.
  */
-const classifierText = (m: Memo) =>
+const classifierText = (m: Memo, t: Text) =>
   [
     m.text,
-    m.context ? `작성 맥락: 프로젝트 ${m.context.project}${m.context.branch ? `, 브랜치 ${m.context.branch}` : ''}` : '',
-    m.attachments.map(describePhoto).join('\n'),
+    m.context ? t.context(m.context.project, m.context.branch) : '',
+    m.attachments.map((a, i) => describePhoto(a, i, t)).join('\n'),
   ].filter(Boolean).join('\n\n');
 
 class WikiImpl implements Wiki {
@@ -712,10 +706,11 @@ class WikiImpl implements Wiki {
     });
   }
 
-  async #appendReview(d: DomainName, notes: readonly string[]): Promise<void> {
+  /** A file that exists keeps its title, because people write in it too. */
+  async #appendReview(d: DomainName, notes: readonly string[], t: Text): Promise<void> {
     if (!notes.length) return;
     const path = this.#layout.fromRel(this.#layout.reviewRel(d));
-    const current = (await readIfExists(path)) ?? '# 검토할 것\n\n';
+    const current = (await readIfExists(path)) ?? `${t.reviewTitle}\n\n`;
     await fs.writeFile(path, `${current.endsWith('\n') ? current : `${current}\n`}${notes.join('\n')}\n`);
   }
 
@@ -773,23 +768,23 @@ class WikiImpl implements Wiki {
     const lay = this.#layout;
     await sweepTmp([...r.config.domains.keys()].flatMap((d) => [lay.answersInboxDir(d), lay.rawDir(d), lay.holdDir(d)]));
     await this.#commitConfig();
-    for (const d of r.config.domains.values()) await this.#init(d);
+    for (const d of r.config.domains.values()) await this.#init(d, textFor(r.config.locale));
   }
 
   /** Commits `init(<d>)` unless HEAD has the domain's log.md. Idempotent. */
-  async #init(d: DomainConfig): Promise<void> {
+  async #init(d: DomainConfig, t: Text): Promise<void> {
     if (this.#ready.has(d.name)) return;
     if (!(await this.#git.head()) || !(await this.#git.lsTree('HEAD', [this.#layout.logRel(d.name)])).length) {
       const log = this.#layout.fromRel(this.#layout.logRel(d.name));
       await fs.mkdir(dirname(log), { recursive: true });
       if ((await readIfExists(log)) === null) await fs.writeFile(log, '# log\n');
-      await this.#writeIndex(d);
+      await this.#writeIndex(d, t);
       await this.#commitManual(d.name, `init(${d.name})`);
     }
     this.#ready.add(d.name);
   }
 
-  async #writeIndex(dc: DomainConfig): Promise<void> {
+  async #writeIndex(dc: DomainConfig, t: Text): Promise<void> {
     const d = dc.name;
     const wikiDir = this.#layout.wikiDir(d);
     const pages = [];
@@ -797,7 +792,7 @@ class WikiImpl implements Wiki {
       const role = roleOf(p);
       if (role === 'page' || role === 'answer') pages.push(pageMeta(p, (await readIfExists(join(wikiDir, ...p.split('/')))) ?? ''));
     }
-    await fs.writeFile(join(wikiDir, 'index.md'), renderIndex(d, pages, dc.pageTypes.map((t) => t.type)));
+    await fs.writeFile(join(wikiDir, 'index.md'), renderIndex(d, pages, dc.pageTypes.map((p) => p.type), t));
   }
 
   async #places(domains: readonly DomainName[]): Promise<Places> {
@@ -1053,8 +1048,9 @@ class WikiImpl implements Wiki {
     let domain = memo.domainHint ? domainIn(config, memo.domainHint) : null;
     let routing: Routing = { by: 'hint' };
     if (!domain) {
-      const systemPrompt = `${await fs.readFile(this.#layout.rootSchema, 'utf8')}\n\n${renderDomainCatalog(config)}`;
-      const req = { systemPrompt, text: classifierText(memo), domains };
+      const t = textFor(config.locale);
+      const systemPrompt = `${await fs.readFile(this.#layout.rootSchema, 'utf8')}\n\n${renderDomainCatalog(config, t)}`;
+      const req = { locale: config.locale, systemPrompt, text: classifierText(memo, t), domains };
       let detail = '';
       for (let i = 0; i < 2 && !domain; i++) {
         const c = await this.#opts.llm.classify(req);
@@ -1234,7 +1230,7 @@ class WikiImpl implements Wiki {
     const env = this.#env(read.config);
     const domains = [...read.config.domains.keys()];
     return this.#locked(this.#jobLocks, domain)(async () => {
-      await this.#init(dc);
+      await this.#init(dc, textFor(read.config.locale));
       await this.#recoverInflight(env, domain);
       await this.#finishMoves(env, domain);
       const ledger = await this.#ledger(domain);
@@ -1308,7 +1304,7 @@ class WikiImpl implements Wiki {
 
   async #commitJob(env: Env, dc: DomainConfig, job: Job, verdict: VerdictId): Promise<RunReport> {
     const d = dc.name;
-    await this.#writeIndex(dc);
+    await this.#writeIndex(dc, textFor(env.config.locale));
     const prefix = `${this.#layout.wikiRel(d)}/`;
     const pages = (await this.#git.status([this.#layout.wikiRel(d)]))
       .map((c) => c.path.slice(prefix.length))
@@ -1330,7 +1326,7 @@ class WikiImpl implements Wiki {
     const reason = describeProblems(problems);
     const outcome: NewOutcome = gaveUp ? { kind: 'gave-up', attempt, max, reason } : { kind: 'attempt-failed', attempt, max, reason, interrupted: false };
     const words = renderThird(env.config.locale, outcome);
-    if (gaveUp) await this.#appendReview(d, [`- [${env.today()}] ${job.ref.kind} \`${job.ref.id}\` ${words}: ${reason}`]);
+    if (gaveUp) await this.#appendReview(d, [`- [${env.today()}] ${job.ref.kind} \`${job.ref.id}\` ${words}: ${reason}`], textFor(env.config.locale));
     await this.#commitLedger(
       env,
       d,
@@ -1377,7 +1373,7 @@ class WikiImpl implements Wiki {
     const reason = INTERRUPTED;
     const outcome: NewOutcome = gaveUp ? { kind: 'gave-up', attempt: marker.attempt, max, reason } : { kind: 'attempt-failed', attempt: marker.attempt, max, reason, interrupted: true };
     const words = renderThird(env.config.locale, outcome);
-    if (gaveUp) await this.#appendReview(d, [`- [${env.today()}] ${kind} \`${id}\` ${words}: ${reason}`]);
+    if (gaveUp) await this.#appendReview(d, [`- [${env.today()}] ${kind} \`${id}\` ${words}: ${reason}`], textFor(env.config.locale));
     const inputs: string[] = [];
     if (gaveUp) for (const p of Object.keys(marker.inputs)) if (await exists(this.#layout.fromRel(p))) inputs.push(p);
     await this.#commitLedger(env, d, () => ({ job: kind, id, outcome }), [...(await this.#reviewPathIfExists(d)), ...inputs], `${kind}(${d}): ${id} ${words}`);
@@ -1422,12 +1418,14 @@ class WikiImpl implements Wiki {
 
   async chatContext(target: ChatTarget): Promise<ChatContext> {
     const config = await this.config();
+    const { locale } = config;
+    const t = textFor(locale);
     if (target.kind === 'root') {
-      return { cwd: this.#layout.root, systemPrompt: `${await fs.readFile(this.#layout.rootSchema, 'utf8')}\n\n${renderDomainCatalog(config)}` };
+      return { cwd: this.#layout.root, systemPrompt: `${await fs.readFile(this.#layout.rootSchema, 'utf8')}\n\n${renderDomainCatalog(config, t)}`, locale };
     }
     const dc = config.domains.get(target.domain);
     if (!dc) throw new Error(`${target.domain} is no longer a domain`);
-    return { cwd: this.#layout.domainDir(dc.name), systemPrompt: `${await composeSystemPrompt(this.#layout.domainSchema(dc.name))}\n\n${renderPageTypes(dc)}` };
+    return { cwd: this.#layout.domainDir(dc.name), systemPrompt: `${await composeSystemPrompt(this.#layout.domainSchema(dc.name))}\n\n${renderPageTypes(dc, t)}`, locale };
   }
 
   async citations(text: string, target: ChatTarget): Promise<readonly PageRef[]> {

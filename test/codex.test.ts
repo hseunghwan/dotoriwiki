@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Finished } from '../src/cli-run.ts';
-import { classifyArgv, codexCli, editArgv, porcelainPaths, toClassification, toEditResult, unavailableFrom } from '../src/codex.ts';
+import { classifyArgv, classifyPrompt, codexCli, editArgv, editPrompt, porcelainPaths, toClassification, toEditResult, unavailableFrom } from '../src/codex.ts';
 import type { CodexChoice } from '../src/models.ts';
 import type { DomainName, EditRequest } from '../src/wiki/index.ts';
 
@@ -22,7 +22,20 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), 'fixture', 'codex');
 const jsonl = (name: string) => readFileSync(join(dir, name), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
 const finished = (events: Record<string, unknown>[], extra: Partial<Finished> = {}): Finished => ({ code: 0, timedOut: false, spawnError: null, stderr: '', events, ...extra });
 const editReq = (cwd: string, onTouch: (p: string) => void = () => undefined): EditRequest => ({
-  modelProfile: null, cwd, systemPrompt: '# 스터디', prompt: '- 메모', timeoutMs: 60_000, writableDir: 'wiki', verdicts: ['created'], onTouch, images: [],
+  modelProfile: null, locale: 'ko', cwd, systemPrompt: '# 스터디', prompt: '- 메모', timeoutMs: 60_000, writableDir: 'wiki', verdicts: ['created'], onTouch, images: [],
+});
+
+test('the stdin text wraps the request in the wiki locale', () => {
+  const ko = editPrompt(editReq('/w/스터디'));
+  assert.ok(ko.startsWith('# 스터디\n\n## 실행 환경\n\n- 도메인 폴더는 `/w/스터디`다.'), ko);
+  assert.ok(ko.endsWith('## 할 일\n\n- 메모'));
+  const en = editPrompt({ ...editReq('/w/learning'), locale: 'en', systemPrompt: '# learning' });
+  assert.ok(en.startsWith('# learning\n\n## Where you run\n\n- The domain folder is `/w/learning`.'), en);
+  assert.match(en, /`raw\/x\.md` is `\/w\/learning\/raw\/x\.md`\.\n- Commands run in `\/w\/learning\/wiki`/);
+  assert.ok(en.endsWith('## Task\n\n- 메모'));
+  const req = { systemPrompt: '# root', text: 'a memo', domains: ['learning' as DomainName] };
+  assert.match(classifyPrompt({ ...req, locale: 'ko' }), /\n\n---\n\n위 라우팅 기준만으로 .*\n\n메모:\n\na memo$/s);
+  assert.match(classifyPrompt({ ...req, locale: 'en' }), /\n\n---\n\nUsing only the routing rules above, .*\n\nMemo:\n\na memo$/s);
 });
 
 test('a recorded classifier call parses to a classification', () => {

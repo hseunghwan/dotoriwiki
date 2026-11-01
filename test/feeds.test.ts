@@ -32,7 +32,7 @@ function feedHttp(over: (url: string) => Response | null = () => null) {
   return { http, calls };
 }
 
-const PLAN: FeedPlan = { timeZone: 'Asia/Seoul' as TimeZone, feeds: new Map(FEED_NAMES.map((n) => [n, { domain: 'news' as DomainName }])) };
+const PLAN: FeedPlan = { locale: 'ko', timeZone: 'Asia/Seoul' as TimeZone, feeds: new Map(FEED_NAMES.map((n) => [n, { domain: 'news' as DomainName }])) };
 
 function sink() {
   const memos: NewMemo[] = [];
@@ -74,7 +74,7 @@ test('hackernews: hits parse with points; the query asks for points >= 300 in th
     link: 'https://example.com/posts/closet-mail-server',
     discussion: 'https://news.ycombinator.com/item?id=80000112',
     publishedAt: new Date('2026-10-28T12:49:45Z'),
-    extra: [['점수', '914']],
+    extra: [['points', '914']],
     summary: '',
   });
 });
@@ -87,7 +87,7 @@ test('ghsa: one request per severity; advisories parse with CVE, severity, and p
   assert.equal(first.key, 'GHSA-7q2m-x9vc-4hrw');
   assert.equal(first.link, null);
   assert.equal(first.discussion, 'https://github.com/advisories/GHSA-7q2m-x9vc-4hrw');
-  assert.deepEqual(first.extra, [['CVE', 'CVE-2026-990101'], ['심각도', 'critical'], ['패키지', 'pip/example-hazelbox >= 2.4.0, < 2.6.1']]);
+  assert.deepEqual(first.extra, [['CVE', 'CVE-2026-990101'], ['severity', 'critical'], ['package', 'pip/example-hazelbox >= 2.4.0, < 2.6.1']]);
   assert.match(first.summary, /^## Summary\n\nHazelbox 2\.4\.0 introduced/);
 });
 
@@ -144,6 +144,7 @@ test('only the feeds the wiki names are polled, into their domain and stamped in
   assert.deepEqual(reports.map((r) => r.feed), ['hackernews']);
   assert.ok(calls.every((u) => u.startsWith('https://hn.algolia.com/')), 'no other feed is fetched');
   assert.ok(out.memos.length > 0 && out.memos.every((m) => m.domainHint === 'learning' && m.tz === 'America/Chicago' && /-0[56]:00$/.test(m.capturedAt)));
+  assert.match(out.memos[0]!.text, /^\[Hacker News\] [^\n]+\nLink: https:[^\n]+\nPublished: \d{4}-\d\d-\d\d\nDiscussion: https:\/\/news\.ycombinator\.com\/item\?id=\d+\nPoints: \d+$/, 'labeled in the wiki locale');
   await wiki.close();
 });
 

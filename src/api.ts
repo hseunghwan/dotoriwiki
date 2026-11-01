@@ -36,7 +36,7 @@ export type MemoAttachmentWire = {
 /** PUT /attachments/:id/:n, body the raw image bytes (JPEG, HEIC, PNG or WebP; at most 40 MB). Same bytes again is 200; other bytes are 409. */
 export type AttachmentUploadResponse = { name: string; sha256: string; bytes: number };
 
-/** `running`: the ingest is mid-run now. `failed`: it gave up (포기) and waits for a retry or a move. */
+/** `running`: the ingest is mid-run now. `failed`: it gave up and waits for a retry or a move. */
 export type MemoStateWire = 'inbox' | 'held' | 'routed' | 'running' | 'ingested' | 'failed';
 
 export type MemoResponse =
@@ -183,7 +183,7 @@ export type HeldResponse = { held: HeldMemoWire[] };
 export type MoveRequest = { domain: string };
 export type ReleaseResponse = { id: string; status: 'released'; domain: string };
 
-/** POST /jobs/retry: reopen a job that gave up (포기). */
+/** POST /jobs/retry: reopen a job that gave up. */
 export type RetryRequest = { domain: string; kind: 'ingest' | 'file-answer'; id: string };
 export type RetryResponse = { status: 'retrying' };
 

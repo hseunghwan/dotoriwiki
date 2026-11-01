@@ -6,7 +6,9 @@
 
 import { createHash } from 'node:crypto';
 import { decodeEntities, DESKTOP_UA } from './enrich.ts';
-import { isoWithOffset, parseMemo, type AcceptResult, type FeedName, type NewMemo, type WikiConfig } from './wiki/index.ts';
+import {
+  isoWithOffset, MEMO_LINK_LABELS, parseMemo, textFor, type AcceptResult, type FeedName, type Locale, type NewMemo, type Text, type WikiConfig,
+} from './wiki/index.ts';
 
 const HOUR = 3_600_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -16,13 +18,13 @@ export type FeedItem = {
   /** Stable for the life of the item; the memo id is derived from it. */
   readonly key: string;
   readonly title: string;
-  /** The `원문:` line, the link enrichment fetches. null: none, or resolved from the discussion page. */
+  /** The link line, the link enrichment fetches. null: none, or resolved from the discussion page. */
   readonly link: string | null;
-  /** The `토론:` line, which enrichment skips. */
+  /** The discussion line, which enrichment skips. */
   readonly discussion: string | null;
   readonly publishedAt: Date;
-  /** Fixed-label lines after `토론:`, such as `점수` or `CVE`. */
-  readonly extra: readonly (readonly [label: string, value: string])[];
+  /** Lines after the discussion line, labeled in the wiki's words, or `CVE` as is. */
+  readonly extra: readonly (readonly [label: Exclude<keyof Text['feed'], 'published'> | 'CVE', value: string])[];
   readonly summary: string;
 };
 
@@ -108,7 +110,7 @@ function hackernews(o: { windowMs: number; cap: number; minPoints: number }): Fe
           link: typeof h.url === 'string' && h.url ? h.url : discussion,
           discussion,
           publishedAt: new Date(h.created_at_i * 1000),
-          extra: [['점수', String(h.points ?? '')]],
+          extra: [['points', String(h.points ?? '')]],
           summary: typeof h.story_text === 'string' ? htmlToText(h.story_text) : '',
         }];
       });
@@ -146,8 +148,8 @@ function ghsa(o: { windowMs: number; cap: number; severities: readonly string[] 
           publishedAt: new Date(a.published_at),
           extra: [
             ...(a.cve_id ? [['CVE', a.cve_id] as const] : []),
-            ['심각도', a.severity ?? ''],
-            ...packages.map((p) => ['패키지', p] as const),
+            ['severity', a.severity ?? ''] as const,
+            ...packages.map((p) => ['package', p] as const),
           ],
           summary: capText((a.description ?? '').trim()),
         }];
@@ -172,13 +174,15 @@ export function feedMemoId(feed: string, key: string): string {
   return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
 }
 
-export function renderFeedMemo(label: string, item: FeedItem, timeZone: string): string {
+export function renderFeedMemo(label: string, item: FeedItem, timeZone: string, locale: Locale): string {
+  const l = MEMO_LINK_LABELS[locale];
+  const t = textFor(locale).feed;
   const head = [
     `[${label}] ${item.title}`,
-    ...(item.link ? [`원문: ${item.link}`] : []),
-    `게시: ${isoWithOffset(item.publishedAt, timeZone).slice(0, 10)}`,
-    ...(item.discussion ? [`토론: ${item.discussion}`] : []),
-    ...item.extra.map(([k, v]) => `${k}: ${v}`),
+    ...(item.link ? [`${l.link}: ${item.link}`] : []),
+    `${t.published}: ${isoWithOffset(item.publishedAt, timeZone).slice(0, 10)}`,
+    ...(item.discussion ? [`${l.discussion}: ${item.discussion}`] : []),
+    ...item.extra.map(([k, v]) => `${k === 'CVE' ? k : t[k]}: ${v}`),
   ];
   return item.summary ? `${head.join('\n')}\n\n${item.summary}` : head.join('\n');
 }
@@ -209,10 +213,11 @@ async function get(http: typeof fetch, url: string): Promise<string> {
   return res.text();
 }
 
-/** Where each feed's memos go and the zone they are stamped in: the wiki's `feeds` and `time_zone`. */
-export type FeedPlan = Pick<WikiConfig, 'feeds' | 'timeZone'>;
+/** Where each feed's memos go, the zone they are stamped in, and the words they are labeled in: the wiki's `feeds`, `time_zone`, and `locale`. */
+export type FeedPlan = Pick<WikiConfig, 'feeds' | 'timeZone' | 'locale'>;
 
-async function pollFeed(name: FeedName, feed: Feed, domain: string, timeZone: string, ports: CollectPorts): Promise<FeedReport> {
+async function pollFeed(name: FeedName, feed: Feed, domain: string, plan: FeedPlan, ports: CollectPorts): Promise<FeedReport> {
+  const { timeZone } = plan;
   const now = ports.now();
   const items: FeedItem[] = [];
   for (const url of feed.urls(now)) items.push(...feed.parse(await get(ports.http, url)));
@@ -231,7 +236,7 @@ async function pollFeed(name: FeedName, feed: Feed, domain: string, timeZone: st
     }
     const memo = parseMemo({
       id: feedMemoId(name, item.key),
-      text: renderFeedMemo(feed.label, { ...item, link }, timeZone),
+      text: renderFeedMemo(feed.label, { ...item, link }, timeZone, plan.locale),
       captured_at: isoWithOffset(item.publishedAt, timeZone),
       tz: timeZone,
       source: 'feed',
@@ -251,7 +256,7 @@ async function pollFeed(name: FeedName, feed: Feed, domain: string, timeZone: st
 export function pollFeeds(feeds: { readonly [N in FeedName]?: Feed }, plan: FeedPlan, ports: CollectPorts): Promise<readonly FeedReport[]> {
   return Promise.all(
     [...plan.feeds].flatMap(([name, { domain }]) => (feeds[name] ? [[name, feeds[name], domain] as const] : [])).map(([name, feed, domain]) =>
-      pollFeed(name, feed, domain, plan.timeZone, ports).catch((e: unknown): FeedReport => ({ kind: 'failed', feed: name, reason: (e as Error).name === 'TimeoutError' ? 'timed out' : (e as Error).message })),
+      pollFeed(name, feed, domain, plan, ports).catch((e: unknown): FeedReport => ({ kind: 'failed', feed: name, reason: (e as Error).name === 'TimeoutError' ? 'timed out' : (e as Error).message })),
     ),
   );
 }

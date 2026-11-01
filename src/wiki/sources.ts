@@ -3,14 +3,29 @@
  * file that records what came back. Pure, like pages.ts. Fetching is the FetchSource port's job.
  */
 
+import type { Locale } from './config.ts';
 import { splitFrontmatter, withFrontmatter, type Parsed } from './pages.ts';
 import type { FetchedSource, MemoId, MemoSource, SourceKind } from './index.ts';
+import type { Text } from './text.ts';
 
 export const MAX_SOURCES = 3;
 export const MAX_SOURCE_CHARS = 30_000;
 
 export type SourceEntry = { readonly url: string } & FetchedSource;
 export type SourceFile = { readonly memo: MemoId; readonly fetchedAt: string; readonly sources: readonly SourceEntry[] };
+
+/**
+ * The labels of the memo lines enrichment reads, by locale. Feed memos in raw/ already carry
+ * them, so like ledger words they never change, and every wiki reads every locale's labels.
+ */
+export const MEMO_LINK_LABELS: { readonly [L in Locale]: { readonly link: string; readonly discussion: string } } = {
+  ko: { link: '원문', discussion: '토론' },
+  en: { link: 'Link', discussion: 'Discussion' },
+};
+
+const labels = Object.values(MEMO_LINK_LABELS);
+const LINK_LINE = new RegExp(`^(?:${labels.map((l) => l.link).join('|')}):`);
+const DISCUSSION_LINE = new RegExp(`^\\s*(?:${labels.map((l) => l.discussion).join('|')})\\s*:`);
 
 const URL_IN_TEXT = /https?:\/\/[^\s<>"'`\]]+/g;
 
@@ -26,14 +41,14 @@ function trimUrl(raw: string): string | null {
 }
 
 /**
- * The first MAX_SOURCES distinct links, in order of appearance. A `토론:` line names a discussion
- * page whose content is already in the memo. A feed memo is fetched only by its `원문:` line, so
- * links inside a feed's summary (an advisory's references) are not.
+ * The first MAX_SOURCES distinct links, in order of appearance. A discussion line names a page
+ * whose content is already in the memo. A feed memo is fetched only by its link line, so links
+ * inside a feed's summary (an advisory's references) are not.
  */
 export function linksToFetch(memoText: string, source: MemoSource): readonly string[] {
   const out: string[] = [];
   for (const line of memoText.split('\n')) {
-    if (/^\s*토론\s*:/.test(line) || (source === 'feed' && !/^원문:/.test(line))) continue;
+    if (DISCUSSION_LINE.test(line) || (source === 'feed' && !LINK_LINE.test(line))) continue;
     for (const m of line.matchAll(URL_IN_TEXT)) {
       const url = trimUrl(m[0]);
       if (url && !out.includes(url)) out.push(url);
@@ -42,14 +57,14 @@ export function linksToFetch(memoText: string, source: MemoSource): readonly str
   return out.slice(0, MAX_SOURCES);
 }
 
-const cap = (text: string) => {
-  const t = text.trim();
-  return t.length <= MAX_SOURCE_CHARS ? t : `${t.slice(0, MAX_SOURCE_CHARS).trimEnd()}\n\n[… ${t.length}자 중 ${MAX_SOURCE_CHARS}자까지만 실음]`;
+const cap = (text: string, t: Text) => {
+  const s = text.trim();
+  return s.length <= MAX_SOURCE_CHARS ? s : `${s.slice(0, MAX_SOURCE_CHARS).trimEnd()}\n\n${t.sidecar.truncated(s.length, MAX_SOURCE_CHARS)}`;
 };
 
-const bodyOf = (s: SourceEntry) => (s.status === 'ok' ? cap(s.text) : `수집 실패: ${s.detail}`);
+const bodyOf = (s: SourceEntry, t: Text) => (s.status === 'ok' ? cap(s.text, t) : t.sidecar.fetchFailed(s.detail));
 
-export function renderSourceFile(f: SourceFile): string {
+export function renderSourceFile(f: SourceFile, t: Text): string {
   return withFrontmatter(
     {
       memo: f.memo,
@@ -62,7 +77,7 @@ export function renderSourceFile(f: SourceFile): string {
         detail: s.status === 'failed' ? s.detail : null,
       })),
     },
-    f.sources.map((s) => `\n## ${s.url}\n\n${bodyOf(s)}\n`).join(''),
+    f.sources.map((s) => `\n## ${s.url}\n\n${bodyOf(s, t)}\n`).join(''),
   );
 }
 

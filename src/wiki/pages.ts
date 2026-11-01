@@ -9,6 +9,7 @@
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type { AnswerFiling, AnswerId, DomainName, GeoPoint, Memo, MemoContext, MemoId, MemoSource, NewMemo, PageRef, Routing } from './index.ts';
 import { isImageLink, parseAttachmentRequests, parseAttachments, renderAttachment, withEmbeds, withoutEmbeds } from './photos.ts';
+import type { Text } from './text.ts';
 
 export type Parsed<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly detail: string };
 const bad = (detail: string): { ok: false; detail: string } => ({ ok: false, detail });
@@ -196,7 +197,7 @@ const fileSafe = (s: string) => s.replace(/[\\/:*?"<>|#^[\]\r\n\t]+/g, ' ').repl
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 /** wiki/answers/<date> <question>.md. Deterministic for a given folder, so a rerun after a crash writes the same file. */
-export function renderAnswerPage(f: AnswerFiling, date: string, existingUnderWiki: ReadonlySet<string>): { pathUnderWiki: string; content: string } {
+export function renderAnswerPage(f: AnswerFiling, date: string, existingUnderWiki: ReadonlySet<string>, t: Text): { pathUnderWiki: string; content: string } {
   const stem = `${date} ${fileSafe(f.question).slice(0, 40).trim()}`.trim();
   const plain = `answers/${stem}.md`;
   const pathUnderWiki = existingUnderWiki.has(plain) ? `answers/${stem} ${f.id.slice(-6)}.md` : plain;
@@ -216,7 +217,7 @@ export function renderAnswerPage(f: AnswerFiling, date: string, existingUnderWik
       asked_at: f.askedAt,
       answer_id: f.id,
     },
-    `${f.answer.trim()}\n\n## 근거\n\n${links.length ? links.map((l) => `- ${l}`).join('\n') : '- 없음'}\n`,
+    `${f.answer.trim()}\n\n${t.answer.cited}\n\n${links.length ? links.map((l) => `- ${l}`).join('\n') : t.answer.none}\n`,
   );
   return { pathUnderWiki, content };
 }
@@ -241,19 +242,19 @@ function indexLink(domain: string, pathUnderWiki: string): string {
   return `[[${domain}/wiki/${path}|${path}]]`;
 }
 
-export function renderIndex(domain: string, pages: readonly PageMeta[], typeOrder: readonly string[]): string {
+export function renderIndex(domain: string, pages: readonly PageMeta[], typeOrder: readonly string[], t: Text): string {
   const groups = new Map<string, PageMeta[]>();
   for (const p of pages) {
     const key = p.type === 'answer' ? 'answer' : p.type && typeOrder.includes(p.type) ? p.type : '';
     groups.set(key, [...(groups.get(key) ?? []), p]);
   }
-  const sections: [string, string][] = [...typeOrder.map((t) => [t, t] as [string, string]), ['', '기타'], ['answer', '저장된 답']];
-  const out = [`# ${domain} 색인`, '', '서버가 페이지 frontmatter에서 만든다. 고치지 않는다.', ''];
+  const sections: [string, string][] = [...typeOrder.map((type) => [type, type] as [string, string]), ['', t.index.other], ['answer', t.index.answers]];
+  const out = [t.index.title(domain), '', t.index.note, ''];
   for (const [key, title] of sections) {
     const list = groups.get(key);
     if (!list?.length) continue;
     out.push(`## ${title}`, '');
-    for (const p of [...list].sort((a, b) => a.name.localeCompare(b.name, 'ko'))) out.push(`- ${indexLink(domain, p.pathUnderWiki)}${p.summary ? ` - ${p.summary}` : ''}`);
+    for (const p of [...list].sort((a, b) => a.name.localeCompare(b.name, t.collation))) out.push(`- ${indexLink(domain, p.pathUnderWiki)}${p.summary ? ` - ${p.summary}` : ''}`);
     out.push('');
   }
   return out.join('\n');

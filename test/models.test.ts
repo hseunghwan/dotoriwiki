@@ -18,7 +18,7 @@ const SPEC = {
 
 test('an absent models.json keeps the Claude defaults, which pass the same flags as before', async () => {
   assert.equal(loadModels(join(tmpdir(), 'llmwiki-no-such-models.json')), DEFAULT_MODELS);
-  const argv = classifyArgv({ systemPrompt: '# 루트', text: '메모', domains: ['journal' as DomainName] }, DEFAULT_MODELS.classify as Extract<ModelChoice, { provider: 'claude' }>);
+  const argv = classifyArgv({ locale: 'ko', systemPrompt: '# 루트', text: '메모', domains: ['journal' as DomainName] }, DEFAULT_MODELS.classify as Extract<ModelChoice, { provider: 'claude' }>);
   assert.deepEqual(argv.slice(argv.indexOf('--model'), argv.indexOf('--model') + 4), ['--model', 'haiku', '--effort', 'low']);
 });
 

@@ -7,7 +7,7 @@
 import { execFile } from 'node:child_process';
 import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom';
-import type { FetchedSource, FetchSource, SourceKind } from './wiki/index.ts';
+import { textFor, type FetchedSource, type FetchSource, type SourceKind, type Text } from './wiki/index.ts';
 
 export type RunResult = { readonly code: number | null; readonly stdout: string; readonly stderr: string };
 /** argv is passed straight to the binary, never through a shell. */
@@ -36,7 +36,7 @@ export function kindOf(url: string): SourceKind {
 const failed = (kind: SourceKind, detail: string, title: string | null = null): FetchedSource => ({ kind, status: 'failed', title, detail });
 
 /** Adding a SourceKind without a fetcher fails type-checking. */
-const FETCHERS: { readonly [K in SourceKind]: (url: string, ports: EnrichPorts) => Promise<FetchedSource> } = {
+const FETCHERS: { readonly [K in SourceKind]: (url: string, ports: EnrichPorts, t: Text) => Promise<FetchedSource> } = {
   video: fetchVideo,
   article: fetchArticle,
 };
@@ -49,10 +49,10 @@ function describeError(e: unknown): string {
 }
 
 export function sourceFetcher(ports: EnrichPorts): FetchSource {
-  return async (url) => {
+  return async (url, locale) => {
     const kind = kindOf(url);
     try {
-      return await FETCHERS[kind](url, ports);
+      return await FETCHERS[kind](url, ports, textFor(locale));
     } catch (e) {
       return failed(kind, describeError(e));
     }
@@ -74,19 +74,19 @@ type VideoInfo = {
 };
 
 /**
- * Manual captions beat auto captions; within each, Korean beats English. Auto tracks other than
- * the spoken language (`-orig`) are machine translations, so they are not picked.
+ * Manual captions beat auto captions; within each, `langs` in order. Auto tracks other than the
+ * spoken language (`-orig`) are machine translations, so they are not picked.
  */
-export function pickSubtitle(info: VideoInfo): { readonly lang: string; readonly auto: boolean; readonly url: string } | null {
+export function pickSubtitle(info: VideoInfo, langs: readonly string[]): { readonly lang: string; readonly auto: boolean; readonly url: string } | null {
   const vtt = (tracks: readonly Track[] | undefined) => tracks?.find((t) => t.ext === 'vtt' && typeof t.url === 'string')?.url;
   const manual = info.subtitles ?? {};
-  for (const lang of ['ko', 'en']) {
+  for (const lang of langs) {
     const key = Object.keys(manual).find((k) => k === lang || k.startsWith(`${lang}-`));
     const url = key ? vtt(manual[key]) : undefined;
     if (url) return { lang, auto: false, url };
   }
   const auto = info.automatic_captions ?? {};
-  for (const lang of ['ko', 'en']) {
+  for (const lang of langs) {
     const url = vtt(auto[`${lang}-orig`]) ?? (info.language === lang ? vtt(auto[lang]) : undefined);
     if (url) return { lang, auto: true, url };
   }
@@ -119,7 +119,7 @@ export function vttToText(vtt: string): string {
 const lastLine = (s: string) => s.trim().split('\n').pop()?.slice(0, 300) ?? '';
 const day = (yyyymmdd: string | undefined) => (yyyymmdd && /^\d{8}$/.test(yyyymmdd) ? `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6)}` : '');
 
-async function fetchVideo(url: string, ports: EnrichPorts): Promise<FetchedSource> {
+async function fetchVideo(url: string, ports: EnrichPorts, t: Text): Promise<FetchedSource> {
   const r = await ports.run(ports.ytDlp, ['-J', '--skip-download', '--no-playlist', '--no-warnings', '--', url], VIDEO_TIMEOUT_MS);
   if (r.code !== 0) return failed('video', `yt-dlp exited ${r.code ?? 'by signal'}: ${lastLine(r.stderr)}`);
   let info: VideoInfo;
@@ -128,22 +128,23 @@ async function fetchVideo(url: string, ports: EnrichPorts): Promise<FetchedSourc
   } catch {
     return failed('video', 'yt-dlp printed no JSON');
   }
-  const track = pickSubtitle(info);
-  let captions = '자막: 없음';
+  const s = t.sidecar;
+  const track = pickSubtitle(info, t.captionLanguages);
+  let captions = s.noCaptions;
   if (track) {
     const res = await ports.http(track.url, { headers: { 'user-agent': DESKTOP_UA }, signal: AbortSignal.timeout(ARTICLE_TIMEOUT_MS) }).catch((e: unknown) => describeError(e));
-    if (typeof res === 'string') captions = `자막: 받지 못함 (${res})`;
-    else if (!res.ok) captions = `자막: 받지 못함 (HTTP ${res.status})`;
-    else captions = `자막 (${track.lang}, ${track.auto ? '자동' : '수동'}):\n${vttToText(await res.text())}`;
+    if (typeof res === 'string') captions = s.captionsFailed(res);
+    else if (!res.ok) captions = s.captionsFailed(`HTTP ${res.status}`);
+    else captions = `${s.captions(track.lang, track.auto)}\n${vttToText(await res.text())}`;
   }
   const title = info.title ?? '';
   const text = [
-    `제목: ${title}`,
-    `채널: ${info.channel ?? info.uploader ?? ''}`,
-    `길이: ${info.duration_string ?? ''}`,
-    `게시: ${day(info.upload_date)}`,
+    `${s.title}: ${title}`,
+    `${s.channel}: ${info.channel ?? info.uploader ?? ''}`,
+    `${s.length}: ${info.duration_string ?? ''}`,
+    `${s.published}: ${day(info.upload_date)}`,
     '',
-    '설명:',
+    `${s.description}:`,
     (info.description ?? '').trim(),
     '',
     captions,
@@ -184,9 +185,9 @@ export function readableText(html: string): { readonly title: string; readonly t
   return text ? { title: (article?.title ?? '').trim(), text } : null;
 }
 
-async function fetchArticle(url: string, ports: EnrichPorts): Promise<FetchedSource> {
+async function fetchArticle(url: string, ports: EnrichPorts, t: Text): Promise<FetchedSource> {
   const res = await ports.http(url, {
-    headers: { 'user-agent': DESKTOP_UA, accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8', 'accept-language': 'ko,en;q=0.8' },
+    headers: { 'user-agent': DESKTOP_UA, accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8', 'accept-language': t.acceptLanguage },
     redirect: 'follow',
     signal: AbortSignal.timeout(ARTICLE_TIMEOUT_MS),
   });

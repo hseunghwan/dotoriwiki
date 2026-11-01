@@ -9,6 +9,7 @@
 import { parseDocument } from 'yaml';
 import type { DomainName } from './index.ts';
 import { validTz } from './pages.ts';
+import type { Text } from './text.ts';
 
 export const CONFIG_FILE = 'dotoriwiki.yaml';
 export const CONFIG_VERSION = 1;
@@ -239,23 +240,23 @@ export function domainIn(config: WikiConfig, name: string): DomainName | null {
 
 const cell = (s: string) => s.replaceAll('|', '\\|');
 
-/** The domain list the classifier and the root chat read after the root CLAUDE.md. Korean until P2 localizes prompts. */
-export function renderDomainCatalog(config: WikiConfig): string {
+/** The domain list the classifier and the root chat read after the root CLAUDE.md. */
+export function renderDomainCatalog(config: WikiConfig, t: Text): string {
   return [
-    '## 도메인 목록',
+    t.catalog.heading,
     '',
-    '| 폴더 | 한 줄 정의 |',
+    `| ${t.catalog.folder} | ${t.catalog.definition} |`,
     '| --- | --- |',
     ...[...config.domains.values()].map((d) => `| \`${d.name}\` | ${cell(d.description)} |`),
   ].join('\n');
 }
 
 /** The domain's page types, read by ingest and domain chat after its CLAUDE.md. */
-export function renderPageTypes(domain: DomainConfig): string {
+export function renderPageTypes(domain: DomainConfig, t: Text): string {
   return [
-    '## 페이지 종류',
+    t.pageTypes.heading,
     '',
-    '| type | 예시 파일 | 내용 |',
+    `| type | ${t.pageTypes.example} | ${t.pageTypes.contents} |`,
     '| --- | --- | --- |',
     ...domain.pageTypes.map((t) => `| \`${t.type}\` | ${t.example ? `\`${cell(t.example)}\`` : ''} | ${cell(t.description)} |`),
   ].join('\n');

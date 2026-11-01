@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isoWithOffset, parseSourceFile, type MemoId, type SourceFile } from '../src/wiki/index.ts';
+import { isoWithOffset, parseSourceFile, textFor, type MemoId, type SourceFile } from '../src/wiki/index.ts';
 import { linksToFetch, renderSourceFile } from '../src/wiki/sources.ts';
 
 test('linksToFetch: first three distinct links in order, trailing punctuation and markdown parens dropped', () => {
@@ -26,6 +26,12 @@ test('linksToFetch: a feed memo is fetched only by its 원문: line', () => {
   assert.deepEqual(linksToFetch(ghsa, 'feed'), []);
 });
 
+test('linksToFetch: English feed memos read the same way, in a wiki of either locale', () => {
+  const hn = '[Hacker News] T\nLink: https://a.example/post\nPublished: 2026-10-29\nDiscussion: https://news.ycombinator.com/item?id=1\nPoints: 312\n\nsee https://c.example';
+  assert.deepEqual(linksToFetch(hn, 'feed'), ['https://a.example/post']);
+  assert.deepEqual(linksToFetch('look at this\nDiscussion: https://news.ycombinator.com/item?id=2\nhttps://d.example', 'typed'), ['https://d.example'], 'a typed memo skips a discussion line too');
+});
+
 test('sidecar render then parse returns the sources, with long text capped behind a visible marker', () => {
   const long = '가'.repeat(30_500);
   const file: SourceFile = {
@@ -37,7 +43,7 @@ test('sidecar render then parse returns the sources, with long text capped behin
       { url: 'https://example.com/long', kind: 'article', status: 'ok', title: '긴 글', text: long },
     ],
   };
-  const text = renderSourceFile(file);
+  const text = renderSourceFile(file, textFor('ko'));
   assert.match(text, /^---\nmemo: 0f1e2d3c-0000-5000-8000-000000000001\nfetched_at: "?2026-10-29T10:00:00\+09:00"?\n/);
   assert.match(text, /\n## https:\/\/example.com\/a.pdf\n\n수집 실패: not HTML: application\/pdf\n/);
   const parsed = parseSourceFile(text);
@@ -51,6 +57,10 @@ test('sidecar render then parse returns the sources, with long text capped behin
   assert.ok(!capped!.text.includes('가'.repeat(30_001)), 'nothing past the cap');
   assert.match(capped!.text, /\[… 30500자 중 30000자까지만 실음\]$/);
   assert.equal(parsed.value.fetchedAt, file.fetchedAt);
+
+  const en = renderSourceFile(file, textFor('en'));
+  assert.match(en, /\n## https:\/\/example.com\/a.pdf\n\nFetch failed: not HTML: application\/pdf\n/);
+  assert.match(en, /\[… kept the first 30000 of 30500 characters\]\n$/);
 });
 
 test('isoWithOffset writes local wall time with the zone offset', () => {

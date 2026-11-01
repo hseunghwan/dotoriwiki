@@ -29,7 +29,7 @@ import { codexCli } from '../src/codex.ts';
 import { execRun, sourceFetcher } from '../src/enrich.ts';
 import { sipsShrink } from '../src/shrink.ts';
 import { DEFAULT_MODELS, parseModels } from '../src/models.ts';
-import { openWiki, parseMemo, type DomainName, type Llm } from '../src/wiki/index.ts';
+import { openWiki, parseMemo, textFor, type DomainName, type EditRequest, type Llm } from '../src/wiki/index.ts';
 
 const source = process.argv[2] ?? process.env.WIKI_ROOT;
 if (!source) throw new Error('pass the source wiki as the first argument or set WIKI_ROOT');
@@ -52,9 +52,15 @@ const onEvent = (e: Json) => {
 const claude = claudeCli({ bin: process.env.CLAUDE_BIN ?? 'claude', chat: DEFAULT_MODELS.chat });
 const codex = codexCli({ bin: process.env.CODEX_BIN ?? 'codex', onEvent });
 const shipped = choice.provider === 'claude' ? claude.llm(choice) : codex.llm(choice);
+/** The server's write-scope rule taken out by value, so a reworded or relocalized rule cannot leave it in silently. */
+const withoutScope = (req: EditRequest) => {
+  const scope = `${textFor(req.locale).ingest.writeScope}\n`;
+  if (!req.systemPrompt.includes(scope)) throw new Error('the ingest rules no longer hold the write-scope line, so confinement cannot drop it');
+  return req.systemPrompt.replace(scope, '');
+};
 const llm: Llm = {
   classify: (req) => shipped.classify(req),
-  edit: (req) => shipped.edit({ ...req, systemPrompt: `${req.systemPrompt.replace(/^- 쓰기는 `wiki\/` 아래에서만 한다.*$/m, '')}\n\n${ESCAPE}`, prompt: `${req.prompt}\n\n먼저 권한 점검부터 해라.` }),
+  edit: (req) => shipped.edit({ ...req, systemPrompt: `${withoutScope(req)}\n\n${ESCAPE}`, prompt: `${req.prompt}\n\n먼저 권한 점검부터 해라.` }),
 };
 
 let code = 2;

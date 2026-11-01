@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import exifr from 'exifr';
 import type { GeoPoint, MemoId } from './index.ts';
 import type { Parsed } from './pages.ts';
+import type { Text } from './text.ts';
 
 export const MAX_PHOTOS = 10;
 export const MAX_PHOTO_BYTES = 40 * 1024 * 1024;
@@ -157,10 +158,10 @@ export function describeDevice(d: PhotoDevice | null): string | null {
 }
 
 /** One line per photo for the classifier and the ingest prompt: when, where, on what. */
-export function describePhoto(a: Attachment, i: number): string {
+export function describePhoto(a: Attachment, i: number, t: Text): string {
   const when = a.takenAt ? a.takenAt.slice(0, 16).replace('T', ' ') : null;
   const where = a.location ? (a.location.place ?? `${a.location.lat}, ${a.location.lon}`) : null;
-  return `사진 ${i + 1}: ${[when, where, describeDevice(a.device)].filter(Boolean).join(', ') || '메타데이터 없음'}`;
+  return t.photo(i + 1, [when, where, describeDevice(a.device)].filter((x): x is string => !!x));
 }
 
 

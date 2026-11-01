@@ -128,6 +128,19 @@ test('accept: photos must be uploaded first; their metadata lands in the frontma
   await wiki.close();
 });
 
+test('an English wiki describes photos to the classifier in English', async () => {
+  const root = await tempWiki('en');
+  const llm = fakeLlm();
+  const wiki = await open(root, llm);
+  const id = ulid(1);
+  const a1 = await upload(wiki, id, 1, jpegWithExif(GALAXY));
+  const a2 = await upload(wiki, id, 2, PLAIN_JPEG, 'camera');
+  await wiki.accept(memo(1, 'Playground', { attachments: [a1, a2] }));
+  await wiki.routeNext();
+  assert.match(llm.classifyCalls[0]!.text, /^Playground\n\nPhoto 1: 2026-10-12 14:03, [^\n]*samsung SM-S928N\nPhoto 2: no metadata$/);
+  await wiki.close();
+});
+
 test('a photo-only memo is accepted; an empty memo without photos still is not', async () => {
   const root = await tempWiki();
   const wiki = await open(root, fakeLlm());

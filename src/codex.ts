@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { cliRunner, isObj, type Finished, type Json } from './cli-run.ts';
 import { classifySchema, editSchema, type CodexChoice } from './models.ts';
-import type { Classification, ClassifyRequest, EditRequest, EditResult, Llm, Unavailable } from './wiki/index.ts';
+import { textFor, type Classification, type ClassifyRequest, type EditRequest, type EditResult, type Llm, type Unavailable } from './wiki/index.ts';
 
 export type CodexConfig = {
   readonly bin: string;
@@ -48,19 +48,10 @@ export function editArgv(req: EditRequest, choice: CodexChoice, schemaFile: stri
   return [...COMMON, ...modelArgs(choice), '-s', 'workspace-write', '-C', join(req.cwd, req.writableDir), ...images, '--output-schema', schemaFile, '-'];
 }
 
-export const classifyPrompt = (req: ClassifyRequest) =>
-  `${req.systemPrompt}\n\n---\n\n위 라우팅 기준만으로 아래 메모 하나의 도메인을 고른다. 파일을 읽거나 명령을 실행하지 않는다.\n\n메모:\n\n${req.text}`;
+export const classifyPrompt = (req: ClassifyRequest) => textFor(req.locale).codex.classify(req.systemPrompt, req.text);
 
-export const editPrompt = (req: EditRequest) => `${req.systemPrompt}
-
-## 실행 환경
-
-- 도메인 폴더는 \`${req.cwd}\`다. 이 지시에 나오는 상대 경로는 모두 이 폴더 기준이다. 예를 들어 \`raw/x.md\`는 \`${join(req.cwd, 'raw', 'x.md')}\`다.
-- 명령은 \`${join(req.cwd, req.writableDir)}\`에서 실행되고, 파일은 그 아래에만 쓸 수 있다.
-
-## 할 일
-
-${req.prompt}`;
+export const editPrompt = (req: EditRequest) =>
+  textFor(req.locale).codex.edit({ systemPrompt: req.systemPrompt, cwd: req.cwd, example: join(req.cwd, 'raw', 'x.md'), writable: join(req.cwd, req.writableDir), task: req.prompt });
 
 const failureText = (f: Finished) =>
   [

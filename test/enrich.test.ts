@@ -8,6 +8,7 @@ import { kindOf, pickSubtitle, sourceFetcher, vttToText, type EnrichPorts, type 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), 'fixture', 'enrich');
 const fixture = (name: string) => readFileSync(join(FIX, name), 'utf8');
 const VIDEO = 'https://youtu.be/dotoriWiki0';
+const KO = ['ko', 'en'];
 
 function ports(over: { http?: (url: string) => Response | Promise<Response>; run?: Run } = {}) {
   const calls = { http: [] as string[], run: [] as (readonly string[])[] };
@@ -45,11 +46,13 @@ test('vttToText: manual captions keep every cue and decode entities', () => {
 
 test('pickSubtitle: manual over auto, Korean over English, no machine-translated auto tracks', () => {
   const t = (name: string) => [{ ext: 'json3', url: `${name}.json3` }, { ext: 'vtt', url: `${name}.vtt` }];
-  assert.deepEqual(pickSubtitle({ subtitles: { en: t('m-en'), 'ko-KR': t('m-ko') }, automatic_captions: { 'ko-orig': t('a-ko') } }), { lang: 'ko', auto: false, url: 'm-ko.vtt' });
-  assert.deepEqual(pickSubtitle({ subtitles: { en: t('m-en') }, automatic_captions: { 'ko-orig': t('a-ko') } }), { lang: 'en', auto: false, url: 'm-en.vtt' });
-  assert.deepEqual(pickSubtitle({ language: 'en', automatic_captions: { ko: t('a-ko-translated'), 'en-orig': t('a-en') } }), { lang: 'en', auto: true, url: 'a-en.vtt' });
-  assert.equal(pickSubtitle({ language: 'en', automatic_captions: { ko: t('a-ko-translated') } }), null);
-  assert.equal(pickSubtitle({}), null);
+  assert.deepEqual(pickSubtitle({ subtitles: { en: t('m-en'), 'ko-KR': t('m-ko') }, automatic_captions: { 'ko-orig': t('a-ko') } }, KO), { lang: 'ko', auto: false, url: 'm-ko.vtt' });
+  assert.deepEqual(pickSubtitle({ subtitles: { en: t('m-en') }, automatic_captions: { 'ko-orig': t('a-ko') } }, KO), { lang: 'en', auto: false, url: 'm-en.vtt' });
+  assert.deepEqual(pickSubtitle({ language: 'en', automatic_captions: { ko: t('a-ko-translated'), 'en-orig': t('a-en') } }, KO), { lang: 'en', auto: true, url: 'a-en.vtt' });
+  assert.equal(pickSubtitle({ language: 'en', automatic_captions: { ko: t('a-ko-translated') } }, KO), null);
+  assert.equal(pickSubtitle({}, KO), null);
+  assert.equal(pickSubtitle({ subtitles: { 'ko-KR': t('m-ko') }, automatic_captions: { 'ko-orig': t('a-ko') } }, ['en']), null, 'an English wiki takes English captions only');
+  assert.deepEqual(pickSubtitle({ subtitles: { 'ko-KR': t('m-ko') }, automatic_captions: { 'en-orig': t('a-en') } }, ['en']), { lang: 'en', auto: true, url: 'a-en.vtt' });
 });
 
 test('kindOf: YouTube hosts are videos, everything else is an article', () => {
@@ -61,7 +64,7 @@ test('kindOf: YouTube hosts are videos, everything else is an article', () => {
 
 test('video: metadata from yt-dlp -J, captions fetched from the picked track', async () => {
   const { p, calls } = ports({ http: () => new Response(fixture('youtube.ko-orig.vtt'), { headers: { 'content-type': 'text/vtt' } }) });
-  const r = await sourceFetcher(p)(VIDEO);
+  const r = await sourceFetcher(p)(VIDEO, 'ko');
   assert.equal(r.status, 'ok');
   if (r.status !== 'ok') return;
   assert.equal(r.kind, 'video');
@@ -76,25 +79,34 @@ test('video: metadata from yt-dlp -J, captions fetched from the picked track', a
 
 test('video: no captions, or captions that fail to download, still make an ok source', async () => {
   const noSubs = ports({ run: async () => ({ code: 0, stdout: JSON.stringify({ ...JSON.parse(fixture('youtube.json')), automatic_captions: {} }), stderr: '' }) });
-  const r1 = await sourceFetcher(noSubs.p)(VIDEO);
+  const r1 = await sourceFetcher(noSubs.p)(VIDEO, 'ko');
   assert.equal(r1.status, 'ok');
   assert.match(r1.status === 'ok' ? r1.text : '', /\n자막: 없음$/);
   assert.equal(noSubs.calls.http.length, 0);
 
   const limited = ports({ http: () => new Response('slow down', { status: 429 }) });
-  const r2 = await sourceFetcher(limited.p)(VIDEO);
+  const r2 = await sourceFetcher(limited.p)(VIDEO, 'ko');
   assert.equal(r2.status, 'ok');
   assert.match(r2.status === 'ok' ? r2.text : '', /\n자막: 받지 못함 \(HTTP 429\)$/);
 });
 
+test('video: an English wiki gets English labels and skips Korean captions', async () => {
+  const { p, calls } = ports({ http: () => new Response(fixture('youtube.ko-orig.vtt'), { headers: { 'content-type': 'text/vtt' } }) });
+  const r = await sourceFetcher(p)(VIDEO, 'en');
+  assert.equal(r.status, 'ok');
+  assert.match(r.status === 'ok' ? r.text : '', /^Title: SQLite[^\n]*\nChannel: 도토리랩\nLength: 1:19\nPublished: 2026-03-08\n\nDescription:\n/);
+  assert.match(r.status === 'ok' ? r.text : '', /\nCaptions: none$/);
+  assert.equal(calls.http.length, 0);
+});
+
 test('video: a yt-dlp failure is a failed source with its last stderr line', async () => {
   const { p } = ports({ run: async () => ({ code: 1, stdout: '', stderr: 'WARNING: x\nERROR: [youtube] abc: Video unavailable\n' }) });
-  assert.deepEqual(await sourceFetcher(p)(VIDEO), { kind: 'video', status: 'failed', title: null, detail: 'yt-dlp exited 1: ERROR: [youtube] abc: Video unavailable' });
+  assert.deepEqual(await sourceFetcher(p)(VIDEO, 'ko'), { kind: 'video', status: 'failed', title: null, detail: 'yt-dlp exited 1: ERROR: [youtube] abc: Video unavailable' });
 });
 
 test('article: a real page comes back as readable main text', async () => {
   const { p } = ports({ http: () => html(fixture('article.html')) });
-  const r = await sourceFetcher(p)('https://example.com/blog/2026/10/one-sqlite-queue/');
+  const r = await sourceFetcher(p)('https://example.com/blog/2026/10/one-sqlite-queue/', 'ko');
   assert.equal(r.status, 'ok');
   if (r.status !== 'ok') return;
   assert.equal(r.kind, 'article');
@@ -103,8 +115,18 @@ test('article: a real page comes back as readable main text', async () => {
   assert.doesNotMatch(r.text, /<\/?(p|div|script)\b|\n{3,}/);
 });
 
+test('article: the request asks for the wiki\'s language first', async () => {
+  const sent: (string | null)[] = [];
+  const http = (async (_url: string, init?: RequestInit) => {
+    sent.push(new Headers(init?.headers).get('accept-language'));
+    return html(fixture('article.html'));
+  }) as typeof fetch;
+  for (const l of ['ko', 'en'] as const) await sourceFetcher({ ytDlp: 'yt-dlp', http, run: async () => ({ code: 1, stdout: '', stderr: '' }) })('https://example.com/a', l);
+  assert.deepEqual(sent, ['ko,en;q=0.8', 'en,*;q=0.5']);
+});
+
 test('article: non-HTML, HTTP errors, oversized bodies, and timeouts are failed sources', async () => {
-  const fetchWith = (http: () => Response | Promise<Response>) => sourceFetcher(ports({ http }).p)('https://example.com/a');
+  const fetchWith = (http: () => Response | Promise<Response>) => sourceFetcher(ports({ http }).p)('https://example.com/a', 'ko');
   assert.deepEqual(await fetchWith(() => html('%PDF-1.7', 'application/pdf')), { kind: 'article', status: 'failed', title: null, detail: 'not HTML: application/pdf' });
   assert.deepEqual(await fetchWith(() => html('nope', 'text/html', 404)), { kind: 'article', status: 'failed', title: null, detail: 'HTTP 404' });
   const big = new ReadableStream({
@@ -124,7 +146,7 @@ test('article: EUC-KR pages declared in a meta tag decode to Korean', async () =
     Buffer.from('</p></article></body></html>'),
   ]);
   const { p } = ports({ http: () => new Response(body, { headers: { 'content-type': 'text/html' } }) });
-  const r = await sourceFetcher(p)('https://example.co.kr/');
+  const r = await sourceFetcher(p)('https://example.co.kr/', 'ko');
   assert.equal(r.status, 'ok');
   assert.match(r.status === 'ok' ? r.text : '', /^한글/);
 });

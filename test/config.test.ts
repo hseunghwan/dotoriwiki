@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { openChatStore } from '../src/chats.ts';
 import { startHttp } from '../src/http.ts';
 import { parseModels, profileNames, routeLlm } from '../src/models.ts';
-import { parseWikiConfig, WikiConfigError, type ConfigParse, type DomainName, type WikiOptions } from '../src/wiki/index.ts';
+import { renderDomainCatalog, renderPageTypes } from '../src/wiki/config.ts';
+import { parseWikiConfig, textFor, WikiConfigError, type ConfigParse, type DomainName, type WikiOptions } from '../src/wiki/index.ts';
 import { closeAtEnd, commitSubjects, editConfig, fakeLlm, headFile, memo, open, readText, tempWiki, ulid } from './helpers.ts';
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), 'fixture');
@@ -39,6 +40,19 @@ test('the Korean fixture parses, and an NFD domain key is read as NFC', () => {
     assert.deepEqual([...r.config.domains.keys()], ['일상', '스터디', '미루기 아카이빙']);
     assert.equal(r.config.fallbackDomain, '일상');
     assert.equal(r.config.timeZone, 'Asia/Seoul');
+  }
+});
+
+test('the domain catalog and page types are headed in the wiki locale', () => {
+  for (const [text, catalog, types] of [
+    [en, '## Domains\n\n| Folder | What belongs here |\n| --- | --- |\n| `journal` |', '## Page types\n\n| type | Example file | What a page holds |\n| --- | --- | --- |\n| `me` | `Me.md` |'],
+    [ko, '## 도메인 목록\n\n| 폴더 | 한 줄 정의 |\n| --- | --- |\n| `일상` |', '## 페이지 종류\n\n| type | 예시 파일 | 내용 |\n| --- | --- | --- |\n'],
+  ] as const) {
+    const r = parseWikiConfig(text, machine);
+    assert.ok(r.ok);
+    const t = textFor(r.config.locale);
+    assert.ok(renderDomainCatalog(r.config, t).startsWith(catalog), renderDomainCatalog(r.config, t));
+    assert.ok(renderPageTypes([...r.config.domains.values()][0]!, t).startsWith(types), renderPageTypes([...r.config.domains.values()][0]!, t));
   }
 });
 
