@@ -1,12 +1,12 @@
 # 앱 연결 (QR 페어링)
 
-## 맥미니에서 QR 띄우기
+## 게이트웨이 컴퓨터에서 QR 띄우기
 
 ```
-cd ~/workspace/llmwiki-app && npm run pair
+dotoriwiki pair
 ```
 
-QR을 띄우기 전에 그 주소로 `GET /status`를 먼저 호출한다. 실제로 연결되는 주소만 QR에 넣는다. QR 아래에는 연결 확인 결과, 직접 입력용 주소, 토큰 위치가 함께 나온다. `npm run pair -- --show-token`으로 실행하면 토큰도 평문으로 보인다.
+QR을 띄우기 전에 그 주소로 `GET /status`를 먼저 호출한다. 실제로 연결되는 주소만 QR에 넣는다. QR 아래에는 연결 확인 결과, 직접 입력용 주소, 토큰 위치가 함께 나온다. `dotoriwiki pair --show-token`으로 실행하면 토큰도 평문으로 보인다.
 
 연결용 웹 페이지는 없다. 게이트웨이는 Tailscale 주소 하나에서만 요청을 받는다. 페이지를 두면 그 주소로 토큰이 노출된다.
 

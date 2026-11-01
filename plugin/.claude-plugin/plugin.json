@@ -11,7 +11,7 @@
     "token": {
       "type": "string",
       "title": "Gateway token",
-      "description": "GATEWAY_TOKEN. On the gateway machine: npm run pair -- --show-token",
+      "description": "GATEWAY_TOKEN. On the gateway machine: dotoriwiki pair --show-token",
       "sensitive": true
     }
   },
