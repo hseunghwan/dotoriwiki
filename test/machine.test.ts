@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeEnv, parseEnvFile, withEnvFile } from '../src/machine.ts';
+import { loadConfig, mergeEnv, parseEnvFile, withEnvFile } from '../src/machine.ts';
 
 const loopback = (key: string, old: string) => key === 'HOST' && old === '127.0.0.1';
 
@@ -30,4 +30,24 @@ test('withEnvFile: a variable set in the environment wins over the file', () => 
   assert.equal(env.PORT, '0');
   assert.equal(env.WIKI_ROOT, '/w');
   assert.equal(env.HOME, '/h');
+});
+
+const base = { WIKI_ROOT: '/w', GATEWAY_TOKEN: '0123456789abcdef', HOME: '/h' };
+
+test('claude bills the subscription by default, and an ANTHROPIC_API_KEY alone does not change that', () => {
+  assert.deepEqual(loadConfig(base).claudeBilling, { kind: 'subscription' });
+  assert.deepEqual(loadConfig({ ...base, ANTHROPIC_API_KEY: 'sk-ant-stray' }).claudeBilling, { kind: 'subscription' });
+  assert.deepEqual(loadConfig({ ...base, CLAUDE_BILLING: 'subscription', ANTHROPIC_API_KEY: 'sk-ant-stray' }).claudeBilling, { kind: 'subscription' });
+});
+
+test('CLAUDE_BILLING=api bills the key from the env file, and the environment wins over the file', () => {
+  const file = 'CLAUDE_BILLING=api\nANTHROPIC_API_KEY=sk-ant-file\n';
+  assert.deepEqual(loadConfig(withEnvFile(base, file)).claudeBilling, { kind: 'api', apiKey: 'sk-ant-file' });
+  assert.deepEqual(loadConfig(withEnvFile({ ...base, ANTHROPIC_API_KEY: 'sk-ant-shell' }, file)).claudeBilling, { kind: 'api', apiKey: 'sk-ant-shell' });
+});
+
+test('CLAUDE_BILLING=api without a key, or an unknown CLAUDE_BILLING, is a settings error that names the fix', () => {
+  assert.throws(() => loadConfig({ ...base, CLAUDE_BILLING: 'api' }), /^Error: CLAUDE_BILLING=api needs ANTHROPIC_API_KEY\. Add it to the env file/);
+  assert.throws(() => loadConfig({ ...base, CLAUDE_BILLING: 'api', ANTHROPIC_API_KEY: '  ' }), /CLAUDE_BILLING=api needs ANTHROPIC_API_KEY/);
+  assert.throws(() => loadConfig({ ...base, CLAUDE_BILLING: 'API' }), /CLAUDE_BILLING must be subscription or api/);
 });

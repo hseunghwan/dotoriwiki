@@ -67,7 +67,7 @@ const onEvent = (e: Json) => {
     commands.push({ command: String(item.command), exit: item.exit_code, output: String(item.aggregated_output ?? '').trim().slice(0, 200) });
   }
 };
-const claude = claudeCli({ bin: process.env.CLAUDE_BIN ?? 'claude', chat: DEFAULT_MODELS.chat });
+const claude = claudeCli({ bin: process.env.CLAUDE_BIN ?? 'claude', chat: DEFAULT_MODELS.chat, billing: { kind: 'subscription' } });
 const codex = codexCli({ bin: process.env.CODEX_BIN ?? 'codex', onEvent });
 const shipped = choice.provider === 'claude' ? claude.llm(choice) : codex.llm(choice);
 /** The server's write-scope rule taken out by value, so a reworded or relocalized rule cannot leave it in silently. */

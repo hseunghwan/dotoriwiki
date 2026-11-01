@@ -37,7 +37,7 @@ await fs.cp(source, root, { recursive: true, filter: (p) => !p.startsWith(join(s
 const baseCommit = git(root, 'rev-parse', 'HEAD').trim();
 section(`wiki copy at ${root} (base ${baseCommit.slice(0, 7)})`);
 
-const claude = claudeCli({ bin: process.env.CLAUDE_BIN ?? 'claude', chat: DEFAULT_MODELS.chat });
+const claude = claudeCli({ bin: process.env.CLAUDE_BIN ?? 'claude', chat: DEFAULT_MODELS.chat, billing: { kind: 'subscription' } });
 const llm = routeLlm(DEFAULT_MODELS, (c) => {
   if (c.provider !== 'claude') throw new Error('the defaults are all claude');
   return claude.llm(c);

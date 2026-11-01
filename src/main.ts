@@ -60,7 +60,7 @@ export async function startGateway(env: NodeJS.ProcessEnv): Promise<void> {
 
 async function serve(cfg: Config): Promise<void> {
   const models = loadModels(cfg.modelsFile);
-  const claude = claudeCli({ bin: cfg.claudeBin, chat: models.chat });
+  const claude = claudeCli({ bin: cfg.claudeBin, chat: models.chat, billing: cfg.claudeBilling });
   const codex = codexCli({ bin: cfg.codexBin });
   const llm = routeLlm(models, (c) => (c.provider === 'claude' ? claude.llm(c) : codex.llm(c)));
   const wiki = await openWiki(cfg.wikiRoot, {
@@ -89,7 +89,7 @@ async function serve(cfg: Config): Promise<void> {
   );
   const { paused, problems } = await wiki.status();
   log('main', {
-    listening: `http://${cfg.host}:${http.port}`, wikiRoot: cfg.wikiRoot, chatsDir: cfg.chatsDir, config: { state: paused ? 'paused' : 'ok', problems },
+    listening: `http://${cfg.host}:${http.port}`, wikiRoot: cfg.wikiRoot, chatsDir: cfg.chatsDir, claudeBilling: cfg.claudeBilling.kind, config: { state: paused ? 'paused' : 'ok', problems },
     models: { ...models, edit: { default: models.edit.default, ...Object.fromEntries(models.edit.profiles) } },
   });
 

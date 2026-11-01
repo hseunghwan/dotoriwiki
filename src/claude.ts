@@ -15,7 +15,10 @@ import { cliRunner, isObj, type Finished, type Json } from './cli-run.ts';
 import { classifySchema, editSchema, type ClaudeChoice } from './models.ts';
 import type { Classification, ClassifyRequest, EditRequest, EditResult, Llm, Unavailable } from './wiki/index.ts';
 
-export type ClaudeConfig = { readonly bin: string; readonly chat: ClaudeChoice };
+/** Who pays for each call: the subscription claude is logged in to, or an Anthropic API key. */
+export type ClaudeBilling = { readonly kind: 'subscription' } | { readonly kind: 'api'; readonly apiKey: string };
+
+export type ClaudeConfig = { readonly bin: string; readonly chat: ClaudeChoice; readonly billing: ClaudeBilling };
 
 export type ChatRequest = {
   readonly cwd: string;
@@ -138,15 +141,17 @@ export function toClassification(f: Finished): Classification | Unavailable {
 }
 
 
-function childEnv(): NodeJS.ProcessEnv {
+function childEnv(billing: ClaudeBilling): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  // With an API key in the environment, claude bills the API instead of the subscription.
+  // With an API key in its environment, claude bills the API instead of the subscription, so a
+  // key exported in the shell must not reach a subscription run.
   delete env.ANTHROPIC_API_KEY;
+  if (billing.kind === 'api') env.ANTHROPIC_API_KEY = billing.apiKey;
   return env;
 }
 
 export function claudeCli(cfg: ClaudeConfig): Claude {
-  const { run, spawn, stopAll } = cliRunner(cfg.bin, childEnv);
+  const { run, spawn, stopAll } = cliRunner(cfg.bin, () => childEnv(cfg.billing));
 
   return {
     llm: (choice) => ({

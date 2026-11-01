@@ -6,10 +6,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chatArgv, classifyArgv, editArgv, toClassification, toEditResult, unavailableFrom, writeAttempts } from '../src/claude.ts';
+import { chatArgv, claudeCli, classifyArgv, editArgv, toClassification, toEditResult, unavailableFrom, writeAttempts } from '../src/claude.ts';
+import type { ClaudeBilling } from '../src/claude.ts';
 import type { Finished } from '../src/cli-run.ts';
 import type { DomainName } from '../src/wiki/index.ts';
 
@@ -63,4 +65,33 @@ test('argv keeps writes scoped, never uses acceptEdits or --bare, and carries no
     assert.ok(!argv.includes('--bare') && !argv.includes('acceptEdits'));
     assert.ok(!argv.some((a) => a.startsWith('- ')), 'the prompt goes on stdin');
   }
+});
+
+/** What a stand-in claude finds as ANTHROPIC_API_KEY, with a stray key exported in the gateway's own environment. */
+async function keySeenBy(billing: ClaudeBilling): Promise<string> {
+  const dir = await fs.mkdtemp(join(process.env.DOTORIWIKI_TEST_TMP ?? tmpdir(), 'dotoriwiki-claude-'));
+  const bin = join(dir, 'claude');
+  await fs.writeFile(bin, `#!/usr/bin/env node
+const reason = process.env.ANTHROPIC_API_KEY ?? 'no key';
+console.log(JSON.stringify({ type: 'result', is_error: false, structured_output: { domain: 'd', confidence: 1, reason } }));
+`, { mode: 0o755 });
+  const before = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'sk-ant-stray-in-the-shell';
+  try {
+    const claude = claudeCli({ bin, chat: { provider: 'claude', model: 'sonnet' }, billing });
+    const r = await claude.llm({ provider: 'claude', model: 'haiku' }).classify({ locale: 'en', systemPrompt: '# root', text: 'memo', domains: ['d' as DomainName] });
+    assert.equal(r.kind, 'classified');
+    return r.kind === 'classified' ? r.reason : '';
+  } finally {
+    if (before === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = before;
+  }
+}
+
+test('subscription billing keeps an ANTHROPIC_API_KEY in the environment away from claude', async () => {
+  assert.equal(await keySeenBy({ kind: 'subscription' }), 'no key');
+});
+
+test('api billing hands claude the configured key, not the one in the environment', async () => {
+  assert.equal(await keySeenBy({ kind: 'api', apiKey: 'sk-ant-from-the-env-file' }), 'sk-ant-from-the-env-file');
 });

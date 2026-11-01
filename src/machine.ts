@@ -7,6 +7,7 @@
 import { promises as fs, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
+import type { ClaudeBilling } from './claude.ts';
 
 /** package.json, one folder up from src/ in a checkout and from dist/ in the installed package. */
 export function packageJson(): { readonly version: string; readonly engines: { readonly node: string } } {
@@ -19,6 +20,7 @@ export type Config = {
   readonly port: number;
   readonly token: string;
   readonly claudeBin: string;
+  readonly claudeBilling: ClaudeBilling;
   readonly codexBin: string;
   readonly ytDlpBin: string;
   readonly modelsFile: string;
@@ -47,7 +49,7 @@ export const GATEWAY_COMMITTER = { name: 'dotoriwiki-gateway', email: 'gateway@l
  * WIKI_ROOT, GATEWAY_TOKEN required; PORT (8787), HOST (127.0.0.1, set the Tailscale address),
  * CLAUDE_BIN (claude), CODEX_BIN (codex), YT_DLP_BIN (yt-dlp), MODELS_FILE
  * (~/.config/dotoriwiki/models.json), CHATS_DIR (~/.local/share/dotoriwiki/chats), COLLECT_FEEDS (on;
- * `off` for a test gateway) optional.
+ * `off` for a test gateway), CLAUDE_BILLING (subscription; `api` bills ANTHROPIC_API_KEY) optional.
  */
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
   const wikiRoot = env.WIKI_ROOT ?? '';
@@ -66,9 +68,19 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   const fromWiki = relative(wikiRoot, chatsDir);
   if (fromWiki !== '..' && !fromWiki.startsWith('../')) throw new Error('CHATS_DIR must be outside WIKI_ROOT: chat transcripts never enter the wiki');
   return {
-    wikiRoot, host, port, token, claudeBin: env.CLAUDE_BIN ?? 'claude', codexBin: env.CODEX_BIN || 'codex', ytDlpBin: env.YT_DLP_BIN ?? 'yt-dlp', modelsFile, chatsDir,
+    wikiRoot, host, port, token, claudeBin: env.CLAUDE_BIN ?? 'claude', claudeBilling: claudeBilling(env), codexBin: env.CODEX_BIN || 'codex', ytDlpBin: env.YT_DLP_BIN ?? 'yt-dlp', modelsFile, chatsDir,
     collectFeeds: env.COLLECT_FEEDS !== 'off',
   };
+}
+
+/** ANTHROPIC_API_KEY is read only when CLAUDE_BILLING asks for it, so a stray one never changes who pays. */
+function claudeBilling(env: NodeJS.ProcessEnv): ClaudeBilling {
+  const mode = env.CLAUDE_BILLING || 'subscription';
+  if (mode === 'subscription') return { kind: 'subscription' };
+  if (mode !== 'api') throw new Error('CLAUDE_BILLING must be subscription or api');
+  const apiKey = env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) throw new Error('CLAUDE_BILLING=api needs ANTHROPIC_API_KEY. Add it to the env file, or remove CLAUDE_BILLING to bill the subscription claude is logged in to.');
+  return { kind: 'api', apiKey };
 }
 
 /** The env file stays valid shell for `source`, so a value is either bare or single-quoted. */
