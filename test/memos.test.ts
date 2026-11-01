@@ -12,12 +12,12 @@ const 일상 = '일상' as DomainName;
 const TYPE_OF: Record<string, string> = { 스터디: 'concept', '미루기 아카이빙': 'item', 일상: 'me' };
 const failsCheck = async (req: EditRequest): Promise<EditResult> => {
   await modelWrites(req, 'wiki/a.md', page(validFields(rawIdOf(req), { type: TYPE_OF[req.cwd.split('/').pop()!] }), '[[없음]]\n'));
-  return { kind: 'finished', verdict: '새 페이지', pages: [] };
+  return { kind: 'finished', verdict: 'created', pages: [] };
 };
 const writesPageOfDomainType = async (req: EditRequest): Promise<EditResult> => {
   const id = rawIdOf(req);
   await modelWrites(req, `wiki/메모 ${id}.md`, page(validFields(id, { type: TYPE_OF[req.cwd.split('/').pop()!] })));
-  return { kind: 'finished', verdict: '새 페이지', pages: [] };
+  return { kind: 'finished', verdict: 'created', pages: [] };
 };
 
 async function routedTo(wiki: Wiki, n: number, d: DomainName) {
@@ -83,7 +83,7 @@ test('every memo state is derived from the folders and the ledger, and a moved m
     [ulid(1), 'ingested', 스터디],
   ]);
   assert.deepEqual(list.at(-1), {
-    memo: memo(1, undefined, { domain_hint: 스터디 }), state: 'ingested', domain: 스터디, verdict: '새 페이지', firstPage: `메모 ${ulid(1)}`,
+    memo: memo(1, undefined, { domain_hint: 스터디 }), state: 'ingested', domain: 스터디, verdict: { id: 'created', text: '새 페이지' }, firstPage: `메모 ${ulid(1)}`,
     finishedAt: ingestedAt,
   });
   assert.deepEqual(list.at(-2), { memo: memo(2, undefined, { domain_hint: 일상 }), state: 'failed', domain: 일상, finishedAt: gaveUpAt });
@@ -143,12 +143,12 @@ test('detail pages: created and modified by the ingest commit, with each type at
     const id = rawIdOf(req);
     await modelWrites(req, 'wiki/RAG.md', page(validFields(id), '고친 본문.\n'));
     await modelWrites(req, 'wiki/인사이트/청크.md', page({ ...validFields(id), type: 'insight' }));
-    return { kind: 'finished', verdict: '기존 페이지 수정', pages: [] };
+    return { kind: 'finished', verdict: 'updated', pages: [] };
   };
   assert.equal((await wiki.runNext(스터디)).kind, 'committed');
   await fs.writeFile(join(root, '스터디', 'wiki', 'RAG.md'), page({ ...validFields('x'), type: 'case' }));
   await routedTo(wiki, 3, 스터디);
-  llm.editWith = async () => ({ kind: 'finished', verdict: '정리할 거리 없음', pages: [] });
+  llm.editWith = async () => ({ kind: 'finished', verdict: 'unchanged', pages: [] });
   assert.equal((await wiki.runNext(스터디)).kind, 'committed', 'a later manual commit retypes RAG');
 
   assert.deepEqual((await wiki.memo(ulid(1) as MemoId))!.pages, [{ path: 'RAG', type: 'concept', change: 'created' }]);
@@ -157,7 +157,7 @@ test('detail pages: created and modified by the ingest commit, with each type at
     { path: 'RAG', type: 'concept', change: 'modified' },
     { path: '인사이트/청크', type: 'insight', change: 'created' },
   ]);
-  assert.deepEqual([second.state === 'ingested' && second.verdict, second.state === 'ingested' && second.firstPage], ['기존 페이지 수정', 'RAG']);
+  assert.deepEqual([second.state === 'ingested' && second.verdict, second.state === 'ingested' && second.firstPage], [{ id: 'updated', text: '기존 페이지 수정' }, 'RAG']);
   assert.deepEqual((await wiki.memo(ulid(3) as MemoId))!.pages, []);
   await wiki.close();
 });

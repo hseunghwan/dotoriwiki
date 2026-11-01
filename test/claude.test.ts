@@ -55,7 +55,7 @@ test('infrastructure trouble is Unavailable and spends no attempt; job trouble i
 });
 
 test('argv keeps writes scoped, never uses acceptEdits or --bare, and carries no prompt text', () => {
-  const edit = editArgv({ modelProfile: null, cwd: '/w/스터디', systemPrompt: '# 스터디', prompt: '- 메모', timeoutMs: 1, writableDir: 'wiki', verdicts: ['새 페이지'], onTouch: () => undefined, images: [] }, { provider: 'claude', model: 'sonnet' });
+  const edit = editArgv({ modelProfile: null, cwd: '/w/스터디', systemPrompt: '# 스터디', prompt: '- 메모', timeoutMs: 1, writableDir: 'wiki', verdicts: ['created'], onTouch: () => undefined, images: [] }, { provider: 'claude', model: 'sonnet' });
   assert.deepEqual(edit.slice(edit.indexOf('--allowedTools'), edit.indexOf('--allowedTools') + 6), ['--allowedTools', 'Read', 'Glob', 'Grep', 'Edit(./wiki/**)', 'Write(./wiki/**)']);
   const all = [edit, classifyArgv({ systemPrompt: '# 루트', text: '- 메모', domains: ['스터디' as DomainName] }, { provider: 'claude', model: 'haiku', effort: 'low' }), chatArgv({ cwd: '/w', systemPrompt: '# 루트', message: '- 질문', resume: null }, { provider: 'claude', model: 'sonnet' })];
   for (const argv of all) {

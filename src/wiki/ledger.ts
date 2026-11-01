@@ -26,6 +26,9 @@ import type { JobKind } from './index.ts';
 
 export const VERDICTS = ['created', 'updated', 'conflict', 'unchanged', 'saved'] as const;
 export type VerdictId = (typeof VERDICTS)[number];
+/** The schema enum of an ingest run, in every locale. `saved` is the file-answer job's own verdict. */
+export const INGEST_VERDICTS = ['created', 'updated', 'conflict', 'unchanged'] as const satisfies readonly VerdictId[];
+export type IngestVerdict = (typeof INGEST_VERDICTS)[number];
 /** An applied line's verdict: one the gateway writes, or text it never wrote. */
 export type Verdict = VerdictId | { readonly unknown: string };
 

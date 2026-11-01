@@ -71,7 +71,7 @@ export function writesValidPage(name?: (id: string) => string) {
   return async (req: EditRequest): Promise<EditResult> => {
     const id = rawIdOf(req);
     await modelWrites(req, `wiki/${name ? name(id) : `메모 ${id}`}.md`, page(validFields(id)));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
 }
 

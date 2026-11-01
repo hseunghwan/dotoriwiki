@@ -147,7 +147,7 @@ test('ingest: the copies are job inputs the model is shown, may be embedded, and
   await wiki.routeNext();
   llm.editWith = async (req: EditRequest): Promise<EditResult> => {
     await modelWrites(req, `wiki/놀이터.md`, page(validFields(rawIdOf(req)), `미끄럼틀을 탔다.\n\n![[${id}-1.jpg]]\n`));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   const report = await wiki.runNext('스터디' as never);
   assert.equal(report.kind, 'committed', ledgerLines(root, '스터디').at(-1));
@@ -167,7 +167,7 @@ test('check: a page may embed only a photo that exists in _attachments', async (
   await wiki.routeNext();
   llm.editWith = async (req) => {
     await modelWrites(req, 'wiki/그림.md', page(validFields(rawIdOf(req)), '![[없는사진.jpg]]\n'));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext('일상' as never)).kind, 'retrying');
   assert.match(ledgerLines(root, '일상').at(-1)!, /broken-link .*\[\[없는사진\.jpg\]\] does not resolve/);

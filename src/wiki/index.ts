@@ -59,7 +59,7 @@ import {
   readIfExists, readInflight, sweepTmp, unlinkQuiet, writeExclusive, writeInflight, type InflightMarker, type Layout,
 } from './layout.ts';
 import {
-  appendLine, LEDGER_WORDS, lineKey, parseLedger, renderThird, VERDICTS, verdictText, type Failure, type JobHistory, type Ledger, type NewOutcome, type VerdictId,
+  appendLine, INGEST_VERDICTS, lineKey, parseLedger, renderThird, verdictText, type Failure, type JobHistory, type Ledger, type NewOutcome, type VerdictId,
 } from './ledger.ts';
 import {
   check, describeProblems, firstProblem, extractWikilinks, linkResolves, namesOf, PAGE_FIELDS, pageMeta, pageRefString, parseAnswerId,
@@ -138,11 +138,14 @@ export type ReleaseResult =
 /** Memo lists are newest captured first; a cursor without an id excludes everything captured at that instant. */
 export type MemoCursor = { readonly capturedAt: string; readonly id: MemoId | null };
 
+/** An applied line's verdict: its id, null for text from before the gateway, and that verdict in the wiki's current words. */
+export type MemoVerdict = { readonly id: VerdictId | null; readonly text: string };
+
 /** A memo and how far it got. `finishedAt` is the committer time of the commit that wrote the terminal ledger line. */
 export type MemoSummary = { readonly memo: Memo } & (
   | { readonly state: 'inbox'; readonly domain: null }
   | { readonly state: 'held' | 'routed' | 'running'; readonly domain: DomainName }
-  | { readonly state: 'ingested'; readonly domain: DomainName; readonly verdict: string; readonly firstPage: string | null; readonly finishedAt: string | null }
+  | { readonly state: 'ingested'; readonly domain: DomainName; readonly verdict: MemoVerdict; readonly firstPage: string | null; readonly finishedAt: string | null }
   | { readonly state: 'failed'; readonly domain: DomainName; readonly finishedAt: string | null }
 );
 
@@ -268,7 +271,7 @@ export type EditRequest = {
   /** The one directory, relative to cwd, the run may write under. */
   readonly writableDir: string;
   /** The structured-output enum for `verdict`. */
-  readonly verdicts: readonly string[];
+  readonly verdicts: readonly VerdictId[];
   /** Called with every path the model tried to write, allowed or denied, absolute or relative to cwd. */
   readonly onTouch: (path: string) => void;
   /** Absolute paths of photos the model should look at; they sit outside cwd. */
@@ -394,9 +397,6 @@ export async function openWiki(root: string, opts: WikiOptions): Promise<Wiki> {
 }
 
 
-/** 공통규칙 정리 작업 2: the verdicts an ingest may return. */
-const INGEST_VERDICTS = ['새 페이지', '기존 페이지 수정', '충돌', '정리할 거리 없음'] as const;
-
 type Job =
   | { readonly kind: 'ingest'; readonly ref: JobRef; readonly order: string; readonly inputs: readonly string[] }
   | { readonly kind: 'file-answer'; readonly ref: JobRef; readonly order: string; readonly filing: AnswerFiling; readonly staging: string; readonly inputs: readonly [] }
@@ -495,7 +495,7 @@ async function performIngest(env: Env, job: Extract<Job, { kind: 'ingest' }>, ct
 
 /** The schema enum asks for one of INGEST_VERDICTS, so this rarely fires; when it does, the attempt fails instead of writing a word the ledger cannot read back. */
 function ingestVerdict(r: Extract<EditResult, { kind: 'finished' }>): Performed {
-  const verdict = VERDICTS.find((v) => LEDGER_WORDS.ko.verdicts[v] === r.verdict && (INGEST_VERDICTS as readonly string[]).includes(r.verdict));
+  const verdict = INGEST_VERDICTS.find((v) => v === r.verdict);
   return verdict ? { kind: 'finished', verdict, pages: r.pages } : { kind: 'failed', reason: `verdict ${JSON.stringify(r.verdict)} is not one of ${INGEST_VERDICTS.join(', ')}` };
 }
 
@@ -859,7 +859,7 @@ class WikiImpl implements Wiki {
     const t = at.history.terminal!;
     const finishedAt = (await this.#ledgerCommit(places, at.domain, `ingest:${memo.id}`, t.line))?.committedAt ?? null;
     return t.kind === 'applied'
-      ? { memo, state: 'ingested', domain: at.domain, verdict: verdictText(locale, t.verdict), firstPage: t.pages[0]?.replace(/\.md$/, '') ?? null, finishedAt }
+      ? { memo, state: 'ingested', domain: at.domain, verdict: { id: typeof t.verdict === 'string' ? t.verdict : null, text: verdictText(locale, t.verdict) }, firstPage: t.pages[0]?.replace(/\.md$/, '') ?? null, finishedAt }
       : { memo, state: 'failed', domain: at.domain, finishedAt };
   }
 

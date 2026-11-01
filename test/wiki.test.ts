@@ -168,7 +168,7 @@ test('page checks: required fields, allowed types, links, cross-domain links at 
   await routedTo(wiki, 1, 미루기);
   llm.editWith = async (req) => {
     await modelWrites(req, 'wiki/항목/기존 항목.md', page({ ...validFields(rawIdOf(req)), type: 'item' }));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(미루기)).kind, 'committed', 'a committed page in another domain');
 
@@ -187,13 +187,13 @@ test('page checks: required fields, allowed types, links, cross-domain links at 
     await routedTo(wiki, n, 스터디);
     llm.editWith = async (req) => {
       for (const [p, c] of files(rawIdOf(req))) await modelWrites(req, p, c);
-      return { kind: 'finished', verdict: '새 페이지', pages: [] };
+      return { kind: 'finished', verdict: 'created', pages: [] };
     };
     if (name.includes('_review.md')) await fs.writeFile(join(root, '스터디/wiki/_review.md'), '# 검토할 것\n');
     const r = await wiki.runNext(스터디);
     assert.deepEqual(problemRules(r), rules, name);
     assert.equal(await readText(join(root, '스터디/wiki/a.md')), null, `${name}: rolled back`);
-    llm.editWith = async () => ({ kind: 'finished', verdict: '정리할 거리 없음', pages: [] });
+    llm.editWith = async () => ({ kind: 'finished', verdict: 'unchanged', pages: [] });
     assert.equal((await wiki.runNext(스터디)).kind, 'committed', `${name}: the next attempt commits`);
   }
 
@@ -202,7 +202,7 @@ test('page checks: required fields, allowed types, links, cross-domain links at 
   await routedTo(wiki, 51, 스터디);
   llm.editWith = async (req) => {
     await modelWrites(req, 'wiki/b.md', page(validFields(rawIdOf(req)), '[[미루기 아카이빙/wiki/항목/기존 항목]] [[일상/wiki/주제/새 주제]]\n'));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   const cross = await wiki.runNext(스터디);
   assert.equal(cross.kind, 'retrying');
@@ -217,7 +217,7 @@ test('failed attempts feed the reason forward, give up after maxAttempts, and �
   await routedTo(wiki, 1, 스터디);
   llm.editWith = async (req) => {
     await modelWrites(req, 'wiki/a.md', page(validFields(rawIdOf(req)), '[[없음]]\n'));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(스터디)).kind, 'retrying');
   assert.equal((await wiki.runNext(스터디)).kind, 'retrying');
@@ -248,7 +248,7 @@ test('index.md lists pages by the domain type order, then saved answers', async 
     await modelWrites(req, 'wiki/인사이트/2026.md', page({ ...validFields(id), type: 'insight', summary: '짧은 깨달음' }));
     await modelWrites(req, 'wiki/케이스/회의 안건을 질문으로 쓰기.md', page({ ...validFields(id), type: 'case', summary: '안건을 질문으로' }));
     await modelWrites(req, 'wiki/RAG.md', page({ ...validFields(id), summary: '청크 크기' }, '[[회의 안건을 질문으로 쓰기]] [[인사이트/2026]]\n'));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(스터디)).kind, 'committed');
   const filed = await wiki.fileAnswer({
@@ -296,7 +296,7 @@ test('confinement: a write attempt outside <d>/wiki fails the attempt and leaves
     req.onTouch('../escape.md');
     await modelWrites(req, 'notes.md', 'escaped\n');
     await fs.writeFile(join(req.cwd, 'wiki', 'unreported.md'), page(validFields(rawIdOf(req))));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   const r = await wiki.runNext(스터디);
   assert.equal(r.kind, 'retrying');
@@ -345,7 +345,7 @@ test('a root reached through a symlink still confines by real path, as claude re
     const abs = join(await fs.realpath(req.cwd), 'wiki', `메모 ${id}.md`);
     req.onTouch(abs);
     await fs.writeFile(abs, page(validFields(id)));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   const wiki = await open(link, llm);
   await routedTo(wiki, 1, 스터디);
@@ -356,14 +356,14 @@ test('a root reached through a symlink still confines by real path, as claude re
 
 const failsCheck = async (req: EditRequest): Promise<EditResult> => {
   await modelWrites(req, 'wiki/a.md', page(validFields(rawIdOf(req)), '[[없음]]\n'));
-  return { kind: 'finished', verdict: '새 페이지', pages: [] };
+  return { kind: 'finished', verdict: 'created', pages: [] };
 };
 
 const TYPE_OF: Record<string, string> = { 스터디: 'concept', '미루기 아카이빙': 'item', 일상: 'me' };
 const writesPageOfDomainType = async (req: EditRequest): Promise<EditResult> => {
   const id = rawIdOf(req);
   await modelWrites(req, `wiki/메모 ${id}.md`, page(validFields(id, { type: TYPE_OF[basename(req.cwd)] })));
-  return { kind: 'finished', verdict: '새 페이지', pages: [] };
+  return { kind: 'finished', verdict: 'created', pages: [] };
 };
 
 async function giveUp(wiki: Wiki, llm: ReturnType<typeof fakeLlm>, d: DomainName) {
@@ -454,7 +454,7 @@ test('wikilink syntax quoted in code is not checked as a link', async () => {
   await routedTo(wiki, 1, 스터디);
   llm.editWith = async (req) => {
     await modelWrites(req, 'wiki/a.md', page(validFields(rawIdOf(req)), 'YAML 중첩 배열 `[[...]]` 와 ``[[없는 페이지]]``\n\n```\n[[코드 블록 안]]\n```\n'));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(스터디)).kind, 'committed', 'code spans and fences hold no links');
   await wiki.close();

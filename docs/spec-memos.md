@@ -27,6 +27,7 @@ A memo moved away (`이동` in the source domain) is listed once, under its targ
 **Fields.**
 
 - `verdict` and `firstPage` come from the applied ledger line (verdict and changed page list). `firstPage` is the first page path, relative to `wiki/`, without `.md`.
+- `verdict` is `{ id, text }`. `id` is the verdict id (`created`, `updated`, `conflict`, `unchanged`, `saved`), or null for text a pre-gateway line holds. `text` is that id in the wiki's current `locale` (`새 페이지` or `new page`), or the line's own text when `id` is null. A locale switch rewords old memos at once, because the text comes from the id.
 - `finishedAt` is the committer time of the commit that added the terminal ledger line. Read it from one `git log` pass over the ledger commits, cached by HEAD sha, not one git call per memo.
 - Detail `pages` come from the ingest commit's name-status, filtered to `<d>/wiki/` pages and answers (no `index.md`, `log.md`, `_review.md`), as `{ path, type, change: 'created' | 'modified' }`, with `path` relative to `wiki/` and without `.md`, like `firstPage`. `type` is read from that file at that commit.
 - Detail `failure` is set for `failed`, and also for `routed` or `running` memos that already have failed attempts, so the app can say "2번째 시도 중". It is `{ attempts, max, code, detail }`. `code` is the leading rule word of the ledger reason (`llm`, `scope`, `input-modified`, `append-only`, `frontmatter`, `type`, `empty`, `broken-link`), `interrupted` for 중단 lines or a 포기 caused by one, and `unknown` for anything else. `detail` is the rest, e.g. `개발소식지식베이스/wiki/기사/x.md: [[...]] does not resolve`. Attempts count since the latest 재시도, so a just-retried memo has `failure: null`.
@@ -47,7 +48,8 @@ export type MemoListItemWire = {
   source: MemoSourceWire;
   domain: string | null;           // null while in the inbox
   state: MemoStateWire;
-  verdict: string | null;          // ingested only
+  verdict: string | null;          // ingested only, the wiki's words for it; old apps show this
+  verdict_id?: 'created' | 'updated' | 'conflict' | 'unchanged' | 'saved' | null;   // ingested only; null before the gateway; absent before P2
   first_page: string | null;
   finished_at: string | null;      // ingested or failed
 };

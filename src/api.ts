@@ -57,8 +57,10 @@ export type MemoListItemWire = {
   /** null while in the inbox. */
   domain: string | null;
   state: MemoStateWire;
-  /** The ingest verdict, ingested only. */
+  /** The ingest verdict as the wiki's locale words it. Ingested only. Old apps show this. */
   verdict: string | null;
+  /** The same verdict as a token. Ingested only. null for a verdict from before the gateway. Absent from gateways before P2. */
+  verdict_id?: 'created' | 'updated' | 'conflict' | 'unchanged' | 'saved' | null;
   /** The first page the ingest wrote, under the domain's wiki/, without .md. Ingested only. */
   first_page: string | null;
   /** When the ingest committed or gave up. Ingested or failed only. */

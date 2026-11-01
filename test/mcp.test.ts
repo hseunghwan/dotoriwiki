@@ -85,12 +85,12 @@ test('write_memo rejects an unknown domain_hint and a bad context as tool errors
 test('memo_status follows a memo to its page, waits when asked, and errors on an unknown id', async () => {
   const s = await serve();
   const { id } = await s.call('write_memo', { text: '메모', domain_hint: '스터디', context });
-  assert.deepEqual(await s.call('memo_status', { id }), { id, state: 'inbox', domain: null, verdict: null, first_page: null, failure: null });
+  assert.deepEqual(await s.call('memo_status', { id }), { id, state: 'inbox', domain: null, verdict: null, verdict_id: null, first_page: null, failure: null });
 
   assert.equal((await s.wiki.routeNext()).kind, 'routed');
   const waited = s.call('memo_status', { id, wait_seconds: 30 });
   assert.equal((await s.wiki.runNext('스터디' as DomainName)).kind, 'committed');
-  assert.deepEqual(await waited, { id, state: 'ingested', domain: '스터디', verdict: '새 페이지', first_page: `메모 ${id}`, failure: null });
+  assert.deepEqual(await waited, { id, state: 'ingested', domain: '스터디', verdict: '새 페이지', verdict_id: 'created', first_page: `메모 ${id}`, failure: null });
 
   assert.deepEqual(await s.call('memo_status', { id: '01JB90A1C2D3E4F5G6H7J8K9ZZ' }), { error: 'no such memo' });
   assert.deepEqual(await s.call('memo_status', { id: '../etc' }), { error: 'id: expected the id write_memo returned' });

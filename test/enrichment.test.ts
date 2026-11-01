@@ -13,7 +13,7 @@ const sidecarRel = (id: string) => `미루기 아카이빙/raw/${id}.source.md`;
 async function writesItem(req: EditRequest) {
   const id = rawIdOf(req);
   await modelWrites(req, `wiki/항목 ${id}.md`, page(validFields(id, { type: 'item' })));
-  return { kind: 'finished', verdict: '새 페이지', pages: [] } as const;
+  return { kind: 'finished', verdict: 'created', pages: [] } as const;
 }
 
 async function setup(text = LINKS) {
@@ -68,7 +68,7 @@ test('a failed attempt keeps the sidecar; retries reuse it, and giving up commit
   const { root, llm, fetch, wiki } = await setup();
   llm.editWith = async (req) => {
     await modelWrites(req, 'wiki/빈.md', '');
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(미루기)).kind, 'retrying');
   const first = await readText(join(root, sidecarRel(ulid(1))));

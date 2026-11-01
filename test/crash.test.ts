@@ -88,7 +88,7 @@ test('runNext: killed mid-edit with a half-written page', async () => {
   llm.editWith = async (req) => {
     assert.equal(await readText(join(req.cwd, 'wiki', '고아.md')), null, 'half-written leftovers are gone before the rerun');
     await modelWrites(req, `wiki/메모 ${rawIdOf(req)}.md`, page(validFields(rawIdOf(req))));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(스터디)).kind, 'committed');
   assert.deepEqual(outcomes(root, ulid(1)), ['중단 1/3', '새 페이지']);
@@ -115,7 +115,7 @@ test('runNext: killed after the ledger line was written and staged, before git c
   llm.editWith = async (req) => {
     const id = rawIdOf(req);
     await modelWrites(req, `wiki/메모 ${id}.md`, page(validFields(id)));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(스터디)).kind, 'committed', 'stale index.lock cleared on open, staged leftovers reset');
   assert.deepEqual(outcomes(root, ulid(1)), ['중단 1/3', '새 페이지'], 'the uncommitted ledger line counted for nothing');
@@ -153,7 +153,7 @@ test('runNext: killed after a failed attempt was committed, before the marker wa
   llm.editWith = async (req) => {
     marker = (await readText(join(root, '.gateway', 'inflight', '스터디.json')))!;
     await modelWrites(req, 'wiki/a.md', '');
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(스터디)).kind, 'retrying');
   await fs.writeFile(join(root, '.gateway', 'inflight', '스터디.json'), marker);
@@ -162,7 +162,7 @@ test('runNext: killed after a failed attempt was committed, before the marker wa
   llm.editWith = async (req) => {
     const id = rawIdOf(req);
     await modelWrites(req, `wiki/메모 ${id}.md`, page(validFields(id)));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(스터디)).kind, 'committed');
   assert.deepEqual(outcomes(root, ulid(1)), ['실패 1/3', '새 페이지'], 'the committed 실패 line is not doubled by a 중단 line');
@@ -206,7 +206,7 @@ test('runNext: Unavailable spends no attempt and leaves wiki/ clean', async () =
   llm.editWith = async (req) => {
     const id = rawIdOf(req);
     await modelWrites(req, `wiki/메모 ${id}.md`, page(validFields(id)));
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(스터디)).kind, 'committed');
   assert.deepEqual(outcomes(root, ulid(1)), ['새 페이지'], 'first real attempt');
@@ -313,7 +313,7 @@ const 미루기 = '미루기 아카이빙' as DomainName;
 const itemPage = async (req: Parameters<FakeLlm['editWith']>[0]) => {
   const id = rawIdOf(req);
   await modelWrites(req, `wiki/메모 ${id}.md`, page(validFields(id, { type: 'item' })));
-  return { kind: 'finished', verdict: '새 페이지', pages: [] } as const;
+  return { kind: 'finished', verdict: 'created', pages: [] } as const;
 };
 
 async function gaveUp(root: string, llm: FakeLlm, n: number, text: string, fetch = fakeFetch()): Promise<Wiki> {
@@ -322,7 +322,7 @@ async function gaveUp(root: string, llm: FakeLlm, n: number, text: string, fetch
   assert.equal((await wiki.routeNext()).kind, 'routed');
   llm.editWith = async (req) => {
     await modelWrites(req, 'wiki/a.md', '');
-    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+    return { kind: 'finished', verdict: 'created', pages: [] };
   };
   for (const kind of ['retrying', 'retrying', 'gave-up']) assert.equal((await wiki.runNext(스터디)).kind, kind);
   llm.editWith = itemPage;

@@ -24,7 +24,7 @@ const configOrNull = (wiki: Wiki): Promise<WikiConfig | null> => wiki.config().c
   throw e;
 });
 
-export type MemoStatus = Pick<MemoDetailWire, 'id' | 'state' | 'domain' | 'verdict' | 'first_page' | 'failure'>;
+export type MemoStatus = Pick<MemoDetailWire, 'id' | 'state' | 'domain' | 'verdict' | 'verdict_id' | 'first_page' | 'failure'>;
 
 function tools(domains: readonly DomainName[]): Tool[] {
   return [
@@ -111,7 +111,7 @@ async function memoStatus(deps: McpDeps, args: Record<string, unknown>, signal: 
     if (!d) return toolError('no such memo');
     const w = detailWire(d);
     if (SETTLED.has(w.state) || Date.now() >= deadline || signal.aborted) {
-      return ok({ id: w.id, state: w.state, domain: w.domain, verdict: w.verdict, first_page: w.first_page, failure: w.failure } satisfies MemoStatus);
+      return ok({ id: w.id, state: w.state, domain: w.domain, verdict: w.verdict, verdict_id: w.verdict_id, first_page: w.first_page, failure: w.failure } satisfies MemoStatus);
     }
     await delay(Math.min(1000, deadline - Date.now()), undefined, { signal }).catch(() => undefined);
   }

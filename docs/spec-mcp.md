@@ -21,7 +21,7 @@ export type MemoContextWire = { project: string; cwd: string; branch: string | n
 - Streamable HTTP at `POST /mcp`, stateless (no session state), with `@modelcontextprotocol/sdk` as an allowed new dependency. Same bearer token check as every other route. An unauthenticated request gets 401 before any MCP handling.
 - Tools:
   - `write_memo({ text, domain_hint?, context? })`. The server makes the id (UUID) and `captured_at` (server clock, `+09:00`, `tz: Asia/Seoul`), sets `source: 'agent'`, then runs the same parse and accept as `POST /memos`. Returns `{ id, status }`. Validation errors come back as MCP tool errors with the parse detail.
-  - `memo_status({ id })`. Returns the `MemoDetailWire` fields the caller needs: state, domain, verdict, first_page, failure. Unknown id is a tool error.
+  - `memo_status({ id })`. Returns the `MemoDetailWire` fields the caller needs: state, domain, verdict, verdict_id, first_page, failure. Unknown id is a tool error.
 - Tool descriptions are written for the calling model. `write_memo` says to pass the user's text verbatim and to fill `context` from the current working directory and git branch. `domain_hint` must be one of the domain folder names, which the description lists, derived from the wiki at startup.
 - No MCP prompts. The `/memo` UX comes from the skill below.
 

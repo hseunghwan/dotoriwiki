@@ -149,11 +149,11 @@ test('GET /memos pages newest first with an opaque cursor; GET /memos/:id descri
   assert.match(ingested.finished_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
   assert.deepEqual({ ...ingested, finished_at: null }, {
     id: ids[0], text: '가'.repeat(140), captured_at: at('08:00'), tz: 'Asia/Seoul', source: 'typed', domain: '스터디', state: 'ingested',
-    verdict: '새 페이지', first_page: `메모 ${ids[0]}`, finished_at: null, photos: 0,
+    verdict: '새 페이지', verdict_id: 'created', first_page: `메모 ${ids[0]}`, finished_at: null, photos: 0,
   });
   assert.deepEqual(all.body.memos[0], {
     id: ids[3], text: memoBody.text, captured_at: at('10:00'), tz: 'Asia/Seoul', source: 'typed', domain: null, state: 'inbox',
-    verdict: null, first_page: null, finished_at: null, photos: 0,
+    verdict: null, verdict_id: null, first_page: null, finished_at: null, photos: 0,
   });
 
   const seen: string[] = [];
@@ -177,7 +177,7 @@ test('GET /memos pages newest first with an opaque cursor; GET /memos/:id descri
   assert.equal(detail.status, 200);
   assert.deepEqual({ ...detail.body, finished_at: null }, {
     id: ids[0], text: long, captured_at: at('08:00'), tz: 'Asia/Seoul', source: 'typed', domain: '스터디', state: 'ingested',
-    verdict: '새 페이지', first_page: `메모 ${ids[0]}`, finished_at: null, photos: 0, place: '성수',
+    verdict: '새 페이지', verdict_id: 'created', first_page: `메모 ${ids[0]}`, finished_at: null, photos: 0, place: '성수',
     routing: { by: 'hint', confidence: null, reason: null },
     pages: [{ path: `메모 ${ids[0]}`, type: 'concept', change: 'created' }],
     failure: null,
