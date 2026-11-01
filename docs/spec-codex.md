@@ -27,7 +27,7 @@ type ModelChoice =
 
 - Parsed and validated once at the boundary (`main.ts`). An unknown provider, a malformed entry, or an `edit` key that names no domain fails startup with a clear message.
 - The wiki keeps calling one `Llm` port. A small router implements it and picks the adapter per call. `edit` needs to know the domain, so `EditRequest` carries the `DomainName` rather than the router guessing it from `cwd`.
-- `scripts/install-launchd.sh` never overwrites an existing `models.json`.
+- `dotoriwiki install` never writes `models.json`.
 
 ## Codex adapter (`src/codex.ts`)
 

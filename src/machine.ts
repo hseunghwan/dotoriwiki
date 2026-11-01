@@ -4,9 +4,14 @@
  * read from the env passed in, so a test or script can point all of it at a temp folder.
  */
 
-import { promises as fs } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
+
+/** package.json, one folder up from src/ in a checkout and from dist/ in the installed package. */
+export function packageJson(): { readonly version: string; readonly engines: { readonly node: string } } {
+  return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as ReturnType<typeof packageJson>;
+}
 
 export type Config = {
   readonly wikiRoot: string;

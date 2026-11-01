@@ -192,5 +192,5 @@ export type ErrorResponse = {
   detail?: string;
 };
 
-/** The QR that `npm run pair` prints. The app scans it, then confirms with GET /status. */
+/** The QR that `dotoriwiki pair` prints. The app scans it, then confirms with GET /status. */
 export type PairingPayload = { v: 1; url: string; token: string; server: string };

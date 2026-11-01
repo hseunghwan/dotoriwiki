@@ -9,7 +9,7 @@ import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execRun, type Run } from './enrich.ts';
-import { loadConfig, machinePaths, withEnvFile, type Config } from './machine.ts';
+import { loadConfig, machinePaths, packageJson, withEnvFile, type Config } from './machine.ts';
 import { loadModels, profileNames, type Models } from './models.ts';
 import { SIPS } from './shrink.ts';
 import { checkWiki, CONFIG_FILE } from './wiki/index.ts';
@@ -28,7 +28,7 @@ export async function doctor(env: NodeJS.ProcessEnv, run: Run = execRun): Promis
   };
 
   const node = process.versions.node;
-  const min = /(\d+)\.(\d+)/.exec(await engines())!;
+  const min = /(\d+)\.(\d+)/.exec(packageJson().engines.node)!;
   const [major, minor] = node.split('.').map(Number) as [number, number];
   if (major > Number(min[1]) || (major === Number(min[1]) && minor >= Number(min[2]))) add('pass', `Node ${node}`);
   else add('fail', `Node ${node} is older than ${min[0]}`, `install Node ${min[0]} or newer`);
@@ -75,10 +75,6 @@ export async function doctor(env: NodeJS.ProcessEnv, run: Run = execRun): Promis
   return checks;
 }
 
-async function engines(): Promise<string> {
-  return (JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8')) as { engines: { node: string } }).engines.node;
-}
-
 /** The env file under the process env, as `start` reads it, then loadConfig. */
 async function envConfig(env: NodeJS.ProcessEnv, add: (status: CheckStatus, what: string, fix?: string | null) => void): Promise<Config | null> {
   const file = machinePaths(env).envFile;
@@ -100,7 +96,7 @@ async function envConfig(env: NodeJS.ProcessEnv, add: (status: CheckStatus, what
   }
   add('pass', `${file} sets WIKI_ROOT ${cfg.wikiRoot} and http://${cfg.host}:${cfg.port}`);
   if (cfg.host === '127.0.0.1' || cfg.host === 'localhost') {
-    add('warn', `HOST is ${cfg.host}, so only this machine reaches the gateway`, `set HOST in ${file} to this machine's Tailscale address before pairing a phone`);
+    add('warn', `HOST is ${cfg.host}, so only this machine reaches the gateway`, `start Tailscale and run \`dotoriwiki install\`, which sets HOST to its address, before pairing a phone`);
   }
   return cfg;
 }

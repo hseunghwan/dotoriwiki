@@ -4,7 +4,7 @@
  *
  * Module map (→ = imports):
  *
- *   cli.ts ─→ main.ts, init.ts, doctor.ts
+ *   cli.ts ─→ main.ts, init.ts, doctor.ts, install.ts ─→ service.ts (pure), pair.ts
  *
  *   main.ts ─→ http.ts ─→ wiki/index.ts        public Wiki surface, domain types, Llm port
  *      │          ├────→ wire.ts ─→ wiki/index.ts   the memo write path, domain → wire mappings
@@ -33,7 +33,6 @@
  * routeNext and runNext, and when).
  */
 
-import { readFileSync } from 'node:fs';
 import { claudeCli } from './claude.ts';
 import { chatTurn } from './chat.ts';
 import { openChatStore } from './chats.ts';
@@ -43,13 +42,9 @@ import { sipsShrink } from './shrink.ts';
 import { FEEDS, pollFeeds } from './feeds.ts';
 import { startHttp } from './http.ts';
 import { startLoops } from './loops.ts';
-import { GATEWAY_COMMITTER, loadConfig, machineEnv, type Config } from './machine.ts';
+import { GATEWAY_COMMITTER, loadConfig, machineEnv, packageJson, type Config } from './machine.ts';
 import { loadModels, profileNames, routeLlm } from './models.ts';
 import { openWiki } from './wiki/index.ts';
-
-function serverVersion(): string {
-  return (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
-}
 
 const log = (where: string, data: object) => console.error(JSON.stringify({ t: new Date().toISOString(), where, ...data }));
 
@@ -87,7 +82,7 @@ async function serve(cfg: Config): Promise<void> {
   const chats = await openChatStore(cfg.chatsDir);
   const http = await startHttp(
     {
-      wiki, chat: (turn, signal) => chatTurn({ wiki, claude }, turn, signal), chats, token: cfg.token, serverVersion: serverVersion(), now: () => new Date(),
+      wiki, chat: (turn, signal) => chatTurn({ wiki, claude }, turn, signal), chats, token: cfg.token, serverVersion: packageJson().version, now: () => new Date(),
       maxBodyBytes: 256 * 1024,
     },
     { host: cfg.host, port: cfg.port },
