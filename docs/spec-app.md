@@ -9,8 +9,23 @@ The phone client for the gateway. Screens come from the design canvas https://cl
 - Android only. Built locally with Gradle (`npx expo prebuild` then `./gradlew assembleRelease`, signed with `app/keystore/keystore.properties` kept out of git, or the debug key without it), or by `.github/workflows/app.yml`. No EAS.
 - Package id and name come from `app/app.config.ts`, which reads `DOTORIWIKI_APP_ID` (default `dev.dotoriwiki.app`) and `DOTORIWIKI_APP_NAME` (default `Dotori`, shown as 도토리 on a Korean phone). Set them in the shell before `expo prebuild` so your build does not install over someone else's. The deep link scheme is `dotoriwiki`.
 - English or Korean by the phone's language, read once at startup (see Locale).
-- Toolchain on this Mac: `JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`, `ANDROID_HOME=/opt/homebrew/share/android-commandlinetools` (platform-tools, emulator, android-35, build-tools 35, arm64 system image installed), AVD `llmwiki_test`.
 - Plain HTTP to the Tailscale address, so cleartext must be allowed (`expo-build-properties`).
+
+## Build the APK
+
+You need Node 24, JDK 17, and the Android SDK with `ANDROID_HOME` set. Android Studio installs the SDK. Set `DOTORIWIKI_APP_ID` and `DOTORIWIKI_APP_NAME` first if you want your own package id and name.
+
+```sh
+cd app
+npm ci
+npx expo prebuild --platform android --no-install
+cd android
+./gradlew assembleRelease
+```
+
+The APK is `app/android/app/build/outputs/apk/release/app-release.apk`. It carries your key when `app/keystore/keystore.properties` exists (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`), and the debug key otherwise. An APK signed with one key cannot update an APK signed with another. Install it with `adb install`, or copy it to the phone and open it.
+
+On GitHub, the `app` workflow builds the same APK on each push to main that changes the app, and attaches it to the release of every `v*` tag. Its header lists the secrets that sign it with your key.
 
 ## Data first
 
