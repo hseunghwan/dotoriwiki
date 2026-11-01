@@ -11,7 +11,7 @@ const FIX = join(dirname(fileURLToPath(import.meta.url)), 'fixture');
 const CLAUDE_FILES = ['CLAUDE.md', '일상/CLAUDE.md', '스터디/CLAUDE.md', '미루기 아카이빙/CLAUDE.md'];
 const flags: MigrateFlags = { fallback: '일상', feedsTo: null, timeZone: 'Asia/Seoul', locale: 'ko', models: null };
 
-/** The fixture as it was before dotoriwiki.yaml: the legacy tables in its CLAUDE.md files, committed. */
+/** The Korean preset as a wiki from before dotoriwiki.yaml: the legacy tables in its CLAUDE.md files, committed. */
 async function legacyWiki(): Promise<string> {
   const root = await tempWiki();
   await fs.rm(join(root, 'dotoriwiki.yaml'));
@@ -21,10 +21,10 @@ async function legacyWiki(): Promise<string> {
   return root;
 }
 
-test('migrating the legacy fixture yields exactly the current fixture, in one commit, once', async () => {
+test('migrating the legacy fixture yields exactly the migrated fixture, in one commit, once', async () => {
   const root = await legacyWiki();
   assert.equal(await migrate(root, flags), 'migrated');
-  for (const f of ['dotoriwiki.yaml', ...CLAUDE_FILES]) assert.equal(await readText(join(root, f)), await readText(join(FIX, '..', '..', 'presets', 'ko', f)), f);
+  for (const f of ['dotoriwiki.yaml', ...CLAUDE_FILES]) assert.equal(await readText(join(root, f)), await readText(join(FIX, 'migrated-wiki', f)), f);
   assert.deepEqual(commitSubjects(root), ['legacy', 'config: move the domain and page-type tables into dotoriwiki.yaml']);
   assert.equal(git(root, 'status', '--porcelain'), '');
   assert.equal(await migrate(root, flags), 'already-migrated');

@@ -1,21 +1,34 @@
-# This wiki's settings, read by the gateway on every request. Machine settings stay in the env file.
-
+# 이 위키의 설정. 게이트웨이는 요청마다 이 파일을 읽으므로 저장한 변경은 재시작 없이 적용된다.
+# 잘못 쓰면 고칠 때까지 라우팅과 정리가 멈춘다. 그동안 보낸 메모는 inbox/에서 기다리고,
+# GET /status가 고칠 키를 하나씩 알려준다.
+# 게이트웨이가 도는 기계의 설정(토큰, 포트, 프로그램, 모델)은 여기에 없다.
 version: 1
+
+# 서버가 쓰는 프롬프트와 생성 페이지의 언어. en 또는 ko.
 locale: ko
+
+# 위키가 적는 날짜의 시간대. 작업 기록, `updated`, 수집한 메모에 쓴다.
 time_zone: Asia/Seoul
+
+# 분류기가 도메인을 고르지 못한 메모가 가는 곳. 거기서 확인을 기다린다.
 fallback_domain: 일상
+
+# 도메인마다 한 항목. 키는 폴더 이름이고, 그 폴더의 CLAUDE.md가 도메인의 쓰임을 모델에게 알려준다.
+# 분류기는 `description`을 보고 라우팅한다.
+# `agents_may_read: true`는 코딩 에이전트가 읽어도 되는 도메인이다.
+# `model_profile: <이름>`을 달면 `edit.default` 대신 models.json의 `edit.<이름>`으로 정리한다.
 domains:
   일상:
-    description: 내 삶의 기록
+    description: 나의 하루, 그 속의 사람들, 그리고 그에 대한 내 생각
     page_types:
       me:
-        description: 나의 경향
+        description: 내가 생각하고 행동하는 경향. 페이지는 하나뿐
         example: ME.md
       theme:
-        description: 반복해서 나오는 생각
+        description: 반복해서 나오는 생각이나 고민
         example: 주제/일과 쉼.md
   스터디:
-    description: 내가 직접 겪고 배운 것
+    description: 일에서든 혼자서든 내가 직접 해보고 배운 것
     agents_may_read: true
     page_types:
       concept:
@@ -26,12 +39,12 @@ domains:
         example: 케이스/회의 안건을 질문으로 쓰기.md
       project:
         description: 프로젝트 하나. 목표, 결정 기록, 배운 것
-        example: 프로젝트/llmwiki.md
+        example: 프로젝트/도토리위키.md
       insight:
         description: 페이지로 키우기엔 짧은 깨달음을 연도별로 모음
         example: 인사이트/2026.md
   미루기 아카이빙:
-    description: 나중에 할 것
+    description: 나중에 보거나 읽거나 해볼 것, 아직 시작하지 않은 아이디어
     page_types:
       item:
         description: 할 일 하나
@@ -39,3 +52,8 @@ domains:
       idea:
         description: 아직 할 일이 아닌 생각. 관련 메모를 모은다
         example: 아이디어/가계부 앱.md
+
+# 세 시간마다 뉴스를 메모로 모아 도메인에 넣는다. 적지 않은 피드는 꺼져 있다.
+# feeds:
+#   geeknews: { domain: 스터디 }
+#   hackernews: { domain: 스터디 }
