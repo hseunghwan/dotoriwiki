@@ -39,13 +39,19 @@ test('a role the file leaves out keeps its default', () => {
   assert.equal(m.edit, DEFAULT_MODELS.edit);
 });
 
+test('an edit without default keeps the Claude default for every domain without a profile', () => {
+  const m = parseModels({ edit: { strong: { provider: 'codex', model: 'm' } } });
+  assert.equal(m.edit.default, DEFAULT_MODELS.edit.default);
+  assert.deepEqual(profileNames(m), ['default', 'strong']);
+});
+
 test('startup fails with a message naming the bad entry', async () => {
   const bad: [unknown, RegExp][] = [
     [{ classify: { provider: 'gemini', model: 'x' } }, /classify\.provider: expected one of claude, codex/],
     [{ classify: { provider: 'codex' } }, /classify\.model/],
     [{ classify: { provider: 'claude', model: 'haiku', effort: 'minimal' } }, /classify\.effort: claude takes one of/],
     [{ classify: { provider: 'codex', model: 'm', temperature: 1 } }, /classify: unknown key "temperature"/],
-    [{ edit: { strong: { provider: 'claude', model: 'opus' } } }, /edit: expected \{"default"/],
+    [{ edit: [] }, /edit: expected \{"default"\?/],
     [{ edit: { default: { provider: 'claude', model: 'sonnet' }, strong: { provider: 'claude' } } }, /edit\."strong"\.model/],
     [{ chat: { provider: 'codex', model: 'gpt-6-luna' } }, /chat: only the claude provider/],
     [{ clasify: {} }, /unknown key "clasify"/],

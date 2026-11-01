@@ -64,10 +64,11 @@ export function parseModels(raw: unknown): Models {
   const chat = raw.chat === undefined ? DEFAULT_MODELS.chat : parseChoice(raw.chat, 'chat');
   if (chat.provider !== 'claude') throw new Error('chat: only the claude provider can run chat');
   if (raw.edit === undefined) return { classify, chat, edit: DEFAULT_MODELS.edit };
-  if (!isObj(raw.edit) || raw.edit.default === undefined) throw new Error('edit: expected {"default", "<profile>"?...}');
+  if (!isObj(raw.edit)) throw new Error('edit: expected {"default"?, "<profile>"?...}');
   const profiles = new Map<string, ModelChoice>();
   for (const [key, value] of Object.entries(raw.edit)) if (key !== 'default') profiles.set(key.normalize('NFC'), parseChoice(value, `edit."${key}"`));
-  return { classify, chat, edit: { default: parseChoice(raw.edit.default, 'edit.default'), profiles } };
+  const editDefault = raw.edit.default === undefined ? DEFAULT_MODELS.edit.default : parseChoice(raw.edit.default, 'edit.default');
+  return { classify, chat, edit: { default: editDefault, profiles } };
 }
 
 /** The profile names a domain's model_profile may use. */
