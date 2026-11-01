@@ -4,8 +4,11 @@ The phone client for the gateway. Screens come from the design canvas https://cl
 
 ## Where and how
 
-- Lives in `app/` inside this repo. Expo (current stable SDK), expo-router, TypeScript. Wire types come from `../src/api.ts` with `import type` only, so Metro never bundles server code.
-- Android only. Built locally with Gradle (`npx expo prebuild` then `./gradlew assembleRelease`, signed with a local keystore kept out of git). No EAS.
+- Lives in `app/` inside this repo. Expo (current stable SDK), expo-router, TypeScript.
+- `app/` builds on its own. Its wire types are `app/src/lib/wire.ts`, a byte copy of `src/api.ts`. Edit `src/api.ts`, then `cp src/api.ts app/src/lib/wire.ts`. The gateway's `test/app-wire.test.ts` and the app CI job fail while the two differ.
+- Android only. Built locally with Gradle (`npx expo prebuild` then `./gradlew assembleRelease`, signed with `app/keystore/keystore.properties` kept out of git, or the debug key without it), or by `.github/workflows/app.yml`. No EAS.
+- Package id and name come from `app/app.config.ts`, which reads `DOTORIWIKI_APP_ID` (default `dev.dotoriwiki.app`) and `DOTORIWIKI_APP_NAME` (default `Dotori`, shown as 도토리 on a Korean phone). Set them in the shell before `expo prebuild` so your build does not install over someone else's. The deep link scheme is `dotoriwiki`.
+- English or Korean by the phone's language, read once at startup (see Locale).
 - Toolchain on this Mac: `JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`, `ANDROID_HOME=/opt/homebrew/share/android-commandlinetools` (platform-tools, emulator, android-35, build-tools 35, arm64 system image installed), AVD `llmwiki_test`.
 - Plain HTTP to the Tailscale address, so cleartext must be allowed (`expo-build-properties`).
 
@@ -32,6 +35,14 @@ type OutboxRow = {
 - **Chat** keeps `session_id` per target in memory for the screen's life. The SSE body is read as a stream (`expo/fetch` supports streaming responses); parse frames per `ChatFrame`. "답 저장" posts `/answers`; "기억해" posts a memo with `source: 'chat'` and the chat's domain as `domain_hint`.
 - **Failure copy** maps `failure.code` exactly per `앱-실패문구.md`.
 
+## Locale
+
+- `app/src/text/index.ts` picks `ko` for any `ko` language tag and `en` for every other tag, from `Intl.DateTimeFormat().resolvedOptions().locale`. Hermes answers it from the Android system locale. A language change takes effect the next time the app starts.
+- Every sentence the app shows is in `app/src/text/ko.ts` and `en.ts`. `en` is typed as `typeof ko`, so a missing or extra key fails `tsc`. Clock and date formats, Korean particles, and English plurals are functions in each table.
+- `text.test.ts` checks that both tables have the same keys and that every English sentence and template, run with sample arguments, holds no Hangul.
+- What the gateway sends is shown as it comes: domain names, `failure.detail`, routing reasons.
+- A verdict is worded from `verdict_id` in the phone's language. When `verdict_id` is null (text from before the gateway), absent (a gateway before P2), or unknown, the app shows `verdict`.
+
 ## Screens
 
 Match the artboards: layout, copy, spacing. Use the Obsidian default theme in both dark and light, following the system setting. No domain colors. The app opens straight into memo input with the keyboard up.
@@ -47,7 +58,8 @@ Match the artboards: layout, copy, spacing. Use the Obsidian default theme in bo
 
 ## Verification
 
-- Unit tests (jest) for the outbox transition table, pairing parse, capture time formatting, SSE frame parsing, failure copy.
+- Unit tests (jest) for the outbox transition table, pairing parse, capture time formatting, SSE frame parsing, failure copy, locale selection, and verdict wording. The suites run as a Korean phone (`jest.setup.ts`), whatever the machine's locale.
 - On the emulator, with a release build, against a **test gateway**: a second gateway process on this Mac pointed at a copy of the wiki (`WIKI_ROOT=<copy>`, `HOST=127.0.0.1`, its own `PORT` and token; the emulator reaches it at `10.0.2.2`). Never pair the emulator with the live gateway. Walk every screen: pair by manual entry, send a memo and watch it reach 정리됨, send one while the gateway is stopped and watch it flush after restart, chat two turns and save an answer, confirm and move a held memo (make one by sending with a classifier result below threshold, or by writing a hold file in the copy), open a failed memo's detail. Screenshot each screen in dark and light (`adb exec-out screencap -p`) and compare against the artboards.
+- Walk the screens once with the emulator's system language in English and once in Korean. On an emulator image with root, `adb root`, then `adb shell "setprop persist.sys.locale en-US; stop; start"` switches it.
 - QR scanning cannot be exercised on the emulator camera. Cover it with a unit test of the decode-to-Pairing path and leave the real scan to the phone.
 - Deliverable: the release APK path, and its sha256.
