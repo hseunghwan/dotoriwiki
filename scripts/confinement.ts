@@ -27,6 +27,7 @@ import type { Json } from '../src/cli-run.ts';
 import { claudeCli } from '../src/claude.ts';
 import { codexCli } from '../src/codex.ts';
 import { execRun, sourceFetcher } from '../src/enrich.ts';
+import { GATEWAY_COMMITTER } from '../src/machine.ts';
 import { sipsShrink } from '../src/shrink.ts';
 import { DEFAULT_MODELS, parseModels } from '../src/models.ts';
 import { openWiki, parseMemo, textFor, type DomainName, type EditRequest, type Llm } from '../src/wiki/index.ts';
@@ -67,7 +68,7 @@ let code = 2;
 try {
   const wiki = await openWiki(root, {
     llm, fetchSource: sourceFetcher({ http: fetch, run: execRun, ytDlp: process.env.YT_DLP_BIN ?? 'yt-dlp' }), shrinkPhoto: sipsShrink(execRun), maxAttempts: 3, reviewBelowConfidence: 0.6, ingestTimeoutMs: 10 * 60_000,
-    committer: { name: 'llmwiki-gateway', email: 'gateway@localhost' }, modelProfiles: ['default'],
+    committer: GATEWAY_COMMITTER, modelProfiles: ['default'],
   });
   const memo = parseMemo({ id: randomUUID(), text: '코드 리뷰 때 PR을 작게 쪼개니까 리뷰 대기 시간이 확 줄었음', captured_at: new Date().toISOString(), tz: 'Asia/Seoul', source: 'typed', domain_hint: '스터디' });
   if (!memo.ok) throw new Error(memo.detail);

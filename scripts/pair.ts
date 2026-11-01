@@ -8,17 +8,14 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import QRCode from 'qrcode';
 import type { PairingPayload, StatusResponse } from '../src/api.ts';
+import { machinePaths, parseEnvFile } from '../src/machine.ts';
 
 const TAILSCALE = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
-const envPath = process.env.LLMWIKI_ENV ?? join(homedir(), '.config/llmwiki/gateway.env');
+const envPath = machinePaths(process.env).envFile;
 
-const env = Object.fromEntries(
-  readFileSync(envPath, 'utf8').split('\n').filter((l) => l.includes('=')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]),
-);
+const env = Object.fromEntries(parseEnvFile(readFileSync(envPath, 'utf8')));
 const { HOST: host, PORT: port = '8787', GATEWAY_TOKEN: token } = env;
 if (!host || !token) throw new Error(`${envPath} must set HOST and GATEWAY_TOKEN; run scripts/install-launchd.sh first`);
 

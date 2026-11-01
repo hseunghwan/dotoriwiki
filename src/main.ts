@@ -7,6 +7,7 @@
  *      │          ├────→ wire.ts ─→ wiki/index.ts   the memo write path, domain → wire mappings
  *      │          ├────→ mcp.ts ──→ wire.ts         POST /mcp: write_memo, memo_status for coding agents
  *      │          └────→ chat.ts ─→ claude.ts (types)
+ *      ├────→ machine.ts                      env settings, the machine's file paths, the env file format
  *      ├────→ loops.ts ─→ wiki/index.ts
  *      ├────→ feeds.ts ─→ wiki/index.ts (accept only), enrich.ts (UA, entities)
  *      ├────→ models.ts ─→ wiki/index.ts (types only)  models.json, the router that implements Llm
@@ -30,8 +31,6 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { isAbsolute, join, relative } from 'node:path';
 import { claudeCli } from './claude.ts';
 import { chatTurn } from './chat.ts';
 import { openChatStore } from './chats.ts';
@@ -41,48 +40,9 @@ import { sipsShrink } from './shrink.ts';
 import { FEEDS, pollFeeds } from './feeds.ts';
 import { startHttp } from './http.ts';
 import { startLoops } from './loops.ts';
+import { GATEWAY_COMMITTER, loadConfig } from './machine.ts';
 import { loadModels, profileNames, routeLlm } from './models.ts';
 import { openWiki } from './wiki/index.ts';
-
-export type Config = {
-  readonly wikiRoot: string;
-  readonly host: string;
-  readonly port: number;
-  readonly token: string;
-  readonly claudeBin: string;
-  readonly codexBin: string;
-  readonly ytDlpBin: string;
-  readonly modelsFile: string;
-  readonly chatsDir: string;
-  readonly collectFeeds: boolean;
-};
-
-/**
- * WIKI_ROOT, GATEWAY_TOKEN required; PORT (8787), HOST (127.0.0.1, set the Tailscale address),
- * CLAUDE_BIN (claude), CODEX_BIN (codex), YT_DLP_BIN (yt-dlp), MODELS_FILE
- * (~/.config/llmwiki/models.json), CHATS_DIR (~/.local/share/llmwiki/chats), COLLECT_FEEDS (on;
- * `off` for a test gateway) optional.
- */
-export function loadConfig(env: NodeJS.ProcessEnv): Config {
-  const wikiRoot = env.WIKI_ROOT ?? '';
-  if (!isAbsolute(wikiRoot)) throw new Error('WIKI_ROOT must be an absolute path');
-  const token = env.GATEWAY_TOKEN ?? '';
-  if (token.length < 16) throw new Error('GATEWAY_TOKEN must be at least 16 characters');
-  const port = Number(env.PORT ?? 8787);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('PORT must be a port number');
-  const host = env.HOST ?? '127.0.0.1';
-  if (host === '0.0.0.0' || host === '::') throw new Error('HOST must be one address (the Tailscale one), not all interfaces');
-  const modelsFile = env.MODELS_FILE ?? join(homedir(), '.config', 'llmwiki', 'models.json');
-  if (!isAbsolute(modelsFile)) throw new Error('MODELS_FILE must be an absolute path');
-  const chatsDir = env.CHATS_DIR ?? join(homedir(), '.local', 'share', 'llmwiki', 'chats');
-  if (!isAbsolute(chatsDir)) throw new Error('CHATS_DIR must be an absolute path');
-  const fromWiki = relative(wikiRoot, chatsDir);
-  if (fromWiki !== '..' && !fromWiki.startsWith('../')) throw new Error('CHATS_DIR must be outside WIKI_ROOT: chat transcripts never enter the wiki');
-  return {
-    wikiRoot, host, port, token, claudeBin: env.CLAUDE_BIN ?? 'claude', codexBin: env.CODEX_BIN || 'codex', ytDlpBin: env.YT_DLP_BIN ?? 'yt-dlp', modelsFile, chatsDir,
-    collectFeeds: env.COLLECT_FEEDS !== 'off',
-  };
-}
 
 function serverVersion(): string {
   return (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
@@ -103,7 +63,7 @@ async function main(): Promise<void> {
     maxAttempts: 3,
     reviewBelowConfidence: 0.6,
     ingestTimeoutMs: 10 * 60_000,
-    committer: { name: 'llmwiki-gateway', email: 'gateway@localhost' },
+    committer: GATEWAY_COMMITTER,
     modelProfiles: profileNames(models),
   });
   const loops = startLoops(wiki, {
