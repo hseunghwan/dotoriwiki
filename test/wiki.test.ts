@@ -4,8 +4,9 @@ import { spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { DomainName, EditRequest, EditResult, MemoId, RunReport, Wiki } from '../src/wiki/index.ts';
+import { detailWire } from '../src/wire.ts';
 import {
-  commitSubjects, fakeFetch, fakeLlm, git, headFile, ledgerLines, listDir, memo, modelWrites, open, page, rawIdOf, readText, tempWiki,
+  commitSubjects, editConfig, fakeFetch, fakeLlm, git, headFile, ledgerLines, listDir, memo, modelWrites, open, page, rawIdOf, readText, tempWiki,
   ulid, validFields, writesValidPage,
 } from './helpers.ts';
 
@@ -457,5 +458,119 @@ test('wikilink syntax quoted in code is not checked as a link', async () => {
     return { kind: 'finished', verdict: 'created', pages: [] };
   };
   assert.equal((await wiki.runNext(스터디)).kind, 'committed', 'code spans and fences hold no links');
+  await wiki.close();
+});
+
+const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
+const third = (root: string, d: string) => ledgerLines(root, d).map((l) => l.split(' | ')[2]);
+const englishPage = (id: string, body = 'Body.\n', type = 'concept') => page({ ...validFields(id), type, summary: `Summary of ${id}` }, body);
+
+test('an English wiki gets English ledger lines, index, review notes, sidecars, answers, and commit subjects', async () => {
+  const root = await tempWiki('en');
+  const llm = fakeLlm();
+  const fetch = fakeFetch();
+  fetch.respond = async () => ({ kind: 'article', status: 'failed', title: null, detail: 'HTTP 500' });
+  const wiki = await open(root, llm, { fetchSource: fetch });
+  const learning = 'learning' as DomainName;
+  const someday = 'someday' as DomainName;
+  const [a, b] = [ulid(1), ulid(2)];
+  const brokenLink = async (req: EditRequest): Promise<EditResult> => {
+    await modelWrites(req, 'wiki/a.md', englishPage(rawIdOf(req), '[[missing]]\n'));
+    return { kind: 'finished', verdict: 'created', pages: [] };
+  };
+  const writesPage = async (req: EditRequest): Promise<EditResult> => {
+    await modelWrites(req, `wiki/Note ${rawIdOf(req)}.md`, englishPage(rawIdOf(req), 'Body.\n', req.cwd.endsWith('someday') ? 'item' : 'concept'));
+    return { kind: 'finished', verdict: 'created', pages: [] };
+  };
+
+  await routedTo(wiki, 1, learning, 'Chunk size 512 worked, see https://example.com/post');
+  await routedTo(wiki, 2, learning, 'Watch the RAG lecture later');
+  llm.editWith = brokenLink;
+  assert.deepEqual([await wiki.runNext(learning), await wiki.runNext(learning), await wiki.runNext(learning)].map((r) => r.kind), ['retrying', 'retrying', 'gave-up']);
+  assert.match(llm.editCalls[1]!.prompt, /The last attempt failed the server's checks and was rolled back\. Reason: broken-link learning\/wiki\/a\.md: \[\[missing\]\] does not resolve/);
+  assert.match(llm.editCalls[0]!.systemPrompt, /\n## Rules the server sets\n[\s\S]*`verdict` is one of:\n {2}- `created`: you made a new page\n/);
+  assert.deepEqual(fetch.calls, ['https://example.com/post']);
+  assert.deepEqual([await wiki.runNext(learning), await wiki.runNext(learning), await wiki.runNext(learning)].map((r) => r.kind), ['retrying', 'retrying', 'gave-up']);
+
+  assert.deepEqual(await wiki.retry({ kind: 'ingest', domain: learning, id: a }), { kind: 'retrying' });
+  llm.editWith = writesPage;
+  assert.equal((await wiki.runNext(learning)).kind, 'committed');
+  assert.deepEqual(await wiki.move(b as MemoId, someday), { kind: 'released', domain: someday });
+  assert.equal((await wiki.runNext(someday)).kind, 'committed');
+  const filing = { id: ulid(3) as never, domain: learning, question: 'What did I learn about chunks?', answer: 'Size 512.', cited: [], sessionId: null, askedAt: '2026-10-29T09:00:00.000Z' };
+  assert.deepEqual(await wiki.fileAnswer(filing), { kind: 'created' });
+  assert.equal((await wiki.runNext(learning, { withLlm: false })).kind, 'committed');
+
+  assert.deepEqual(third(root, 'learning'), [
+    'failed 1/3', 'failed 2/3', 'gave up 3/3', 'failed 1/3', 'failed 2/3', 'gave up 3/3', 'retry', 'new page', 'moved → someday', 'saved',
+  ]);
+  assert.deepEqual(third(root, 'someday'), ['new page']);
+  assert.equal(headFile(root, 'learning/wiki/_review.md'), [
+    '# To review', '',
+    `- [2026-10-28] ingest \`${a}\` gave up 3/3: broken-link learning/wiki/a.md: [[missing]] does not resolve`,
+    `- [2026-10-28] ingest \`${b}\` gave up 3/3: broken-link learning/wiki/a.md: [[missing]] does not resolve`, '',
+  ].join('\n'));
+  assert.equal(headFile(root, 'learning/wiki/index.md'), [
+    '# learning index', '', 'The server builds this page from page frontmatter. Do not edit it.', '',
+    '## concept', '', `- [[learning/wiki/Note ${a}|Note ${a}]] - Summary of ${a}`, '',
+    '## Saved answers', '', '- [[learning/wiki/answers/2026-10-28 What did I learn about chunks|answers/2026-10-28 What did I learn about chunks]] - What did I learn about chunks?', '',
+  ].join('\n'));
+  assert.match(headFile(root, 'learning/wiki/answers/2026-10-28 What did I learn about chunks.md')!, /\nSize 512\.\n\n## Cited pages\n\n- none\n$/);
+  assert.match(headFile(root, `learning/raw/${a}.source.md`)!, /\n## https:\/\/example\.com\/post\n\nFetch failed: HTTP 500\n$/);
+  const subjects = commitSubjects(root);
+  for (const s of [`ingest(learning): ${a} failed 1/3`, `ingest(learning): ${a} gave up 3/3`, `retry(learning): ingest ${a}`, `ingest(learning): ${a}`, `move(learning→someday): ${b}`]) {
+    assert.ok(subjects.includes(s), s);
+  }
+  for (const s of subjects) assert.doesNotMatch(s, HANGUL, s);
+  const touched = new Set(git(root, 'log', '--name-only', '--format=').split('\n').filter(Boolean));
+  for (const path of touched) {
+    const text = headFile(root, path);
+    if (text !== null) assert.doesNotMatch(text, HANGUL, path);
+  }
+  assert.ok(touched.has('learning/wiki/log.md') && touched.has(`learning/raw/${a}.source.md`) && touched.has('someday/wiki/index.md'), 'the sweep saw the generated files');
+  await wiki.close();
+});
+
+test('a wiki that switches from ko to en keeps its Korean ledger lines and reports the verdict in the new words', async () => {
+  const root = await tempWiki();
+  const llm = fakeLlm();
+  const wiki = await open(root, llm);
+  await routedTo(wiki, 1, 스터디);
+  llm.editWith = async (req) => {
+    await modelWrites(req, 'wiki/a.md', page(validFields(rawIdOf(req)), '[[없음]]\n'));
+    return { kind: 'finished', verdict: 'created', pages: [] };
+  };
+  for (let i = 0; i < 3; i++) await wiki.runNext(스터디);
+  const korean = headFile(root, '스터디/wiki/log.md')!;
+  assert.deepEqual(third(root, '스터디'), ['실패 1/3', '실패 2/3', '포기 3/3']);
+
+  await editConfig(root, (c) => ({ ...c, locale: 'en' }));
+  assert.deepEqual(await wiki.retry({ kind: 'ingest', domain: 스터디, id: ulid(1) }), { kind: 'retrying' });
+  llm.editWith = writesValidPage();
+  assert.equal((await wiki.runNext(스터디)).kind, 'committed');
+  const log = headFile(root, '스터디/wiki/log.md')!;
+  assert.ok(log.startsWith(korean), 'the Korean lines stay byte for byte');
+  assert.deepEqual(third(root, '스터디').slice(3), ['retry', 'new page']);
+  const w = detailWire((await wiki.memo(ulid(1) as MemoId))!);
+  assert.deepEqual([w.state, w.verdict, w.verdict_id], ['ingested', 'new page', 'created']);
+  assert.equal(w.finished_at, git(root, 'log', '-1', '--format=%cI').trim());
+  await wiki.close();
+});
+
+test('a verdict outside the id enum fails the attempt with rule llm and writes no line with that word', async () => {
+  const root = await tempWiki();
+  const llm = fakeLlm();
+  const wiki = await open(root, llm);
+  await routedTo(wiki, 1, 스터디);
+  llm.editWith = async (req) => {
+    await modelWrites(req, `wiki/메모 ${rawIdOf(req)}.md`, page(validFields(rawIdOf(req))));
+    return { kind: 'finished', verdict: '새 페이지', pages: [] };
+  };
+  const r = await wiki.runNext(스터디);
+  assert.equal(r.kind, 'retrying');
+  assert.deepEqual(r.kind === 'retrying' && r.problems, [{ rule: 'llm', path: '', detail: 'verdict "새 페이지" is not one of created, updated, conflict, unchanged' }]);
+  assert.equal((await wiki.memo(ulid(1) as MemoId))!.failure?.code, 'llm');
+  assert.deepEqual(third(root, '스터디'), ['실패 1/3']);
+  assert.equal(await readText(join(root, '스터디', 'wiki', `메모 ${ulid(1)}.md`)), null, 'the page is rolled back');
   await wiki.close();
 });
