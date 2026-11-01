@@ -27,10 +27,10 @@
  *   memo routed       <d>/raw/<id>.md exists, and L(d) has no terminal line for ingest:<id>
  *   memo running      memo routed in d, and .gateway/inflight/<d>.json names ingest:<id>
  *   memo ingested     L(d) has an applied line for ingest:<id>
- *   memo failed       L(d) has a 포기 line for ingest:<id>
- *   memo moved out    L(d) has an 이동 → <d'> line for ingest:<id>, and <d>/raw/<id>.md is gone from HEAD
+ *   memo failed       L(d) has a gave-up line for ingest:<id>
+ *   memo moved out    L(d) has a moved-to-<d'> line for ingest:<id>, and <d>/raw/<id>.md is gone from HEAD
  *   move unfinished   memo failed in d, and some <d'>/raw/<id>.md has routing {by: user, from: d}
- *   attempts          실패/중단 lines for ingest:<id> in L(d) since its latest 재시도
+ *   attempts          failed and interrupted lines for ingest:<id> in L(d) since its latest retry
  *   answer pending    inbox/answers/<d>/<id>.md exists, and L(d) has no terminal line for file-answer:<id>
  *   domain running    .gateway/inflight/<d>.json exists
  *
@@ -51,14 +51,16 @@ import { promises as fs, watch as fsWatch } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import {
   CONFIG_FILE, domainIn, parseWikiConfig, renderDomainCatalog, renderPageTypes, WikiConfigError, type ConfigParse, type ConfigProblem, type DomainConfig,
-  type MachineFacts, type ModelProfile, type WikiConfig,
+  type Locale, type MachineFacts, type ModelProfile, type WikiConfig,
 } from './config.ts';
 import { openGit, type AppendedLine, type Git } from './git.ts';
 import {
   acquireLock, clearInflight, composeSystemPrompt, exists, layout, linkExclusive, listMarkdown, listNames,
   readIfExists, readInflight, sweepTmp, unlinkQuiet, writeExclusive, writeInflight, type InflightMarker, type Layout,
 } from './layout.ts';
-import { appendLine, lineKey, parseLedger, type Failure, type JobHistory, type Ledger, type LedgerOutcome } from './ledger.ts';
+import {
+  appendLine, LEDGER_WORDS, lineKey, parseLedger, renderThird, VERDICTS, verdictText, type Failure, type JobHistory, type Ledger, type NewOutcome, type VerdictId,
+} from './ledger.ts';
 import {
   check, describeProblems, firstProblem, extractWikilinks, linkResolves, namesOf, PAGE_FIELDS, pageMeta, pageRefString, parseAnswerId,
   parseAnswerStaging, parseMemoFile, parseMemoId, renderAnswerPage, renderAnswerStaging, renderIndex, renderMemoFile,
@@ -71,6 +73,8 @@ import { isoWithOffset, linksToFetch, renderSourceFile } from './sources.ts';
 
 export type { ConfigParse, ConfigProblem, DomainConfig, FeedName, Locale, MachineFacts, ModelProfile, PageTypeSpec, TimeZone, WikiConfig } from './config.ts';
 export { CONFIG_FILE, CONFIG_VERSION, FEED_NAMES, WikiConfigError, domainIn, parseWikiConfig } from './config.ts';
+export type { JobHistory, VerdictId } from './ledger.ts';
+export { lineKey, parseLedger, verdictText } from './ledger.ts';
 export type { Parsed, Problem } from './pages.ts';
 export { pageRefString, parseAnswerId, parseMemo, parseMemoId } from './pages.ts';
 export type { SourceEntry, SourceFile } from './sources.ts';
@@ -208,7 +212,7 @@ export type RouteReport =
 
 export type RunReport =
   | { readonly kind: 'idle' }
-  | { readonly kind: 'committed'; readonly job: JobRef; readonly commit: string; readonly verdict: string }
+  | { readonly kind: 'committed'; readonly job: JobRef; readonly commit: string; readonly verdict: VerdictId }
   | { readonly kind: 'retrying'; readonly job: JobRef; readonly attempt: number; readonly problems: readonly Problem[] }
   | { readonly kind: 'gave-up'; readonly job: JobRef; readonly problems: readonly Problem[] }
   | { readonly kind: 'unavailable'; readonly job: JobRef; readonly reason: string; readonly retryAfterMs: number }
@@ -345,7 +349,7 @@ export interface Wiki {
    * gets its init(<d>) commit first; a domain no longer declared is idle.
    */
   runNext(domain: DomainName, opts?: { readonly withLlm?: boolean }): Promise<RunReport>;
-  /** Appends a 재시도 line for a job that gave up, so the worker picks it again. */
+  /** Appends a retry line for a job that gave up, so the worker picks it again. */
   retry(job: JobRef): Promise<RetryResult>;
   status(): Promise<Status>;
   chatContext(target: ChatTarget): Promise<ChatContext>;
@@ -408,7 +412,8 @@ type Env = {
   readonly stamp: () => string;
 };
 type JobCtx = { readonly history: JobHistory; readonly touch: (path: string) => void; readonly domain: DomainConfig };
-type Performed = EditResult | Unavailable;
+/** What a job hands to runNext: the verdict is already one the ledger can write. */
+type Performed = { readonly kind: 'finished'; readonly verdict: VerdictId; readonly pages: readonly string[] } | Extract<EditResult, { kind: 'failed' }> | Unavailable;
 type JobSpec<J extends Job> = {
   readonly needsLlm: boolean;
   /** Runs after the inflight marker is written, so a throw spends an attempt; may add job inputs. */
@@ -474,7 +479,7 @@ async function performIngest(env: Env, job: Extract<Job, { kind: 'ingest' }>, ct
       : '',
     ctx.history.lastFailure ? `\n지난 시도는 서버 검사에서 실패해 되돌려졌다. 이유: ${ctx.history.lastFailure.reason}\n같은 문제가 없도록 처음부터 다시 해라.` : '',
   ].filter(Boolean).join('\n');
-  return env.llm.edit({
+  const result = await env.llm.edit({
     modelProfile: ctx.domain.modelProfile,
     cwd,
     systemPrompt: `${await composeSystemPrompt(env.layout.domainSchema(job.ref.domain))}\n\n${renderPageTypes(ctx.domain)}\n\n${ingestRules(env.today(), ctx.domain.pageTypes.map((t) => t.type))}`,
@@ -485,6 +490,13 @@ async function performIngest(env: Env, job: Extract<Job, { kind: 'ingest' }>, ct
     onTouch: ctx.touch,
     images,
   });
+  return result.kind === 'finished' ? ingestVerdict(result) : result;
+}
+
+/** The schema enum asks for one of INGEST_VERDICTS, so this rarely fires; when it does, the attempt fails instead of writing a word the ledger cannot read back. */
+function ingestVerdict(r: Extract<EditResult, { kind: 'finished' }>): Performed {
+  const verdict = VERDICTS.find((v) => LEDGER_WORDS.ko.verdicts[v] === r.verdict && (INGEST_VERDICTS as readonly string[]).includes(r.verdict));
+  return verdict ? { kind: 'finished', verdict, pages: r.pages } : { kind: 'failed', reason: `verdict ${JSON.stringify(r.verdict)} is not one of ${INGEST_VERDICTS.join(', ')}` };
 }
 
 async function performFileAnswer(env: Env, job: Extract<Job, { kind: 'file-answer' }>, ctx: JobCtx): Promise<Performed> {
@@ -494,7 +506,7 @@ async function performFileAnswer(env: Env, job: Extract<Job, { kind: 'file-answe
   ctx.touch(abs);
   await fs.mkdir(dirname(abs), { recursive: true });
   await fs.writeFile(abs, content);
-  return { kind: 'finished', verdict: '저장', pages: [pathUnderWiki] };
+  return { kind: 'finished', verdict: 'saved', pages: [pathUnderWiki] };
 }
 
 function serializer(): <T>(fn: () => Promise<T>) => Promise<T> {
@@ -690,12 +702,12 @@ class WikiImpl implements Wiki {
   }
 
   /** The one place a ledger line is written: under the domain's ledger lock, on top of HEAD's log.md. */
-  async #commitLedger(env: Env, d: DomainName, line: (head: Ledger) => { job: JobKind; id: string; outcome: LedgerOutcome } | null, paths: readonly string[], message: string): Promise<string | null> {
+  async #commitLedger(env: Env, d: DomainName, line: (head: Ledger) => { job: JobKind; id: string; outcome: NewOutcome } | null, paths: readonly string[], message: string): Promise<string | null> {
     return this.#locked(this.#ledgerLocks, d)(async () => {
       const text = await this.#headLog(d);
       const l = line(parseLedger(text));
       if (!l) return null;
-      await fs.writeFile(this.#layout.fromRel(this.#layout.logRel(d)), appendLine(text, { date: env.today(), ...l }));
+      await fs.writeFile(this.#layout.fromRel(this.#layout.logRel(d)), appendLine(env.config.locale, text, { date: env.today(), ...l }));
       return this.#git.commit([this.#layout.logRel(d), ...paths], message);
     });
   }
@@ -840,19 +852,20 @@ class WikiImpl implements Wiki {
     return { ...parsed.value, at: { ...at, history: places.domains.find((d) => d.domain === at.domain)!.ledger.history('ingest', id) } };
   }
 
-  async #summary(places: Places, { memo, at }: Found): Promise<MemoSummary> {
+  async #summary(places: Places, { memo, at }: Found, locale: Locale): Promise<MemoSummary> {
     if (!at) return { memo, state: 'inbox', domain: null };
     if (at.state !== 'ingested' && at.state !== 'failed') return { memo, state: at.state, domain: at.domain };
     // locate() named the state from this very line.
     const t = at.history.terminal!;
     const finishedAt = (await this.#ledgerCommit(places, at.domain, `ingest:${memo.id}`, t.line))?.committedAt ?? null;
     return t.kind === 'applied'
-      ? { memo, state: 'ingested', domain: at.domain, verdict: t.verdict, firstPage: t.pages[0]?.replace(/\.md$/, '') ?? null, finishedAt }
+      ? { memo, state: 'ingested', domain: at.domain, verdict: verdictText(locale, t.verdict), firstPage: t.pages[0]?.replace(/\.md$/, '') ?? null, finishedAt }
       : { memo, state: 'failed', domain: at.domain, finishedAt };
   }
 
   async memos(opts: { readonly limit: number; readonly before: MemoCursor | null }): Promise<readonly MemoSummary[]> {
-    const places = await this.#places(await this.#domains());
+    const config = await this.config();
+    const places = await this.#places([...config.domains.keys()]);
     const found: Found[] = [];
     for (const id of new Set([...places.inbox, ...places.domains.flatMap((d) => [...d.raw, ...d.hold])])) {
       const f = await this.#found(places, id);
@@ -862,15 +875,16 @@ class WikiImpl implements Wiki {
     const before = opts.before && orderKey(opts.before.capturedAt, opts.before.id ?? '');
     const page = found.filter((f) => before === null || key(f) < before).sort((a, b) => (key(a) < key(b) ? 1 : -1)).slice(0, opts.limit);
     const out: MemoSummary[] = [];
-    for (const f of page) out.push(await this.#summary(places, f));
+    for (const f of page) out.push(await this.#summary(places, f, config.locale));
     return out;
   }
 
   async memo(id: MemoId): Promise<MemoDetail | null> {
-    const places = await this.#places(await this.#domains());
+    const config = await this.config();
+    const places = await this.#places([...config.domains.keys()]);
     const f = await this.#found(places, id);
     if (!f) return null;
-    const summary = await this.#summary(places, f);
+    const summary = await this.#summary(places, f, config.locale);
     const h = f.at?.history;
     const failure =
       summary.state === 'failed' && h?.terminal?.kind === 'gave-up' ? failureOf(h.terminal, h.terminal.attempt)
@@ -1126,7 +1140,7 @@ class WikiImpl implements Wiki {
   /**
    * Writes the memo into <to>/raw/ with `by: user` routing, its sidecar first so the copy is
    * never enriched twice. A domain the memo once left has a terminal line for it, so that
-   * ledger gets a 재시도 first, or the new copy would never be picked.
+   * ledger gets a retry line first, or the new copy would never be picked.
    */
   async #place(env: Env, id: MemoId, from: DomainName, to: DomainName, memoFile: string, sidecar: string | null): Promise<void> {
     const parsed = parseMemoFile(memoFile);
@@ -1292,7 +1306,7 @@ class WikiImpl implements Wiki {
     });
   }
 
-  async #commitJob(env: Env, dc: DomainConfig, job: Job, verdict: string): Promise<RunReport> {
+  async #commitJob(env: Env, dc: DomainConfig, job: Job, verdict: VerdictId): Promise<RunReport> {
     const d = dc.name;
     await this.#writeIndex(dc);
     const prefix = `${this.#layout.wikiRel(d)}/`;
@@ -1314,14 +1328,15 @@ class WikiImpl implements Wiki {
     const max = this.#opts.maxAttempts;
     const gaveUp = attempt >= max;
     const reason = describeProblems(problems);
-    if (gaveUp) await this.#appendReview(d, [`- [${env.today()}] ${job.ref.kind} \`${job.ref.id}\` 포기 ${attempt}/${max}: ${reason}`]);
-    const outcome: LedgerOutcome = gaveUp ? { kind: 'gave-up', attempt, max, reason } : { kind: 'attempt-failed', attempt, max, reason, interrupted: false };
+    const outcome: NewOutcome = gaveUp ? { kind: 'gave-up', attempt, max, reason } : { kind: 'attempt-failed', attempt, max, reason, interrupted: false };
+    const words = renderThird(env.config.locale, outcome);
+    if (gaveUp) await this.#appendReview(d, [`- [${env.today()}] ${job.ref.kind} \`${job.ref.id}\` ${words}: ${reason}`]);
     await this.#commitLedger(
       env,
       d,
       () => ({ job: job.ref.kind, id: job.ref.id, outcome }),
       [...(await this.#reviewPathIfExists(d)), ...(gaveUp ? job.inputs : [])],
-      `${job.ref.kind}(${d}): ${job.ref.id} ${gaveUp ? '포기' : '실패'} ${attempt}/${max}`,
+      `${job.ref.kind}(${d}): ${job.ref.id} ${words}`,
     );
     return gaveUp ? { kind: 'gave-up', job: job.ref, problems } : { kind: 'retrying', job: job.ref, attempt, problems };
   }
@@ -1360,11 +1375,12 @@ class WikiImpl implements Wiki {
     const max = this.#opts.maxAttempts;
     const gaveUp = marker.attempt >= max;
     const reason = INTERRUPTED;
-    if (gaveUp) await this.#appendReview(d, [`- [${env.today()}] ${kind} \`${id}\` 포기 ${marker.attempt}/${max}: ${reason}`]);
+    const outcome: NewOutcome = gaveUp ? { kind: 'gave-up', attempt: marker.attempt, max, reason } : { kind: 'attempt-failed', attempt: marker.attempt, max, reason, interrupted: true };
+    const words = renderThird(env.config.locale, outcome);
+    if (gaveUp) await this.#appendReview(d, [`- [${env.today()}] ${kind} \`${id}\` ${words}: ${reason}`]);
     const inputs: string[] = [];
     if (gaveUp) for (const p of Object.keys(marker.inputs)) if (await exists(this.#layout.fromRel(p))) inputs.push(p);
-    const outcome: LedgerOutcome = gaveUp ? { kind: 'gave-up', attempt: marker.attempt, max, reason } : { kind: 'attempt-failed', attempt: marker.attempt, max, reason, interrupted: true };
-    await this.#commitLedger(env, d, () => ({ job: kind, id, outcome }), [...(await this.#reviewPathIfExists(d)), ...inputs], `${kind}(${d}): ${id} ${gaveUp ? '포기' : '중단'} ${marker.attempt}/${max}`);
+    await this.#commitLedger(env, d, () => ({ job: kind, id, outcome }), [...(await this.#reviewPathIfExists(d)), ...inputs], `${kind}(${d}): ${id} ${words}`);
     await clearInflight(file);
   }
 
