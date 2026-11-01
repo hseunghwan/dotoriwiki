@@ -47,7 +47,7 @@ export async function initWiki(dir: string, locale: Locale, env: NodeJS.ProcessE
   });
   if (present.length) throw new Error(`${root} is not empty. Give init a new or empty folder.`);
 
-  await fs.cp(join(PRESETS, locale), root, { recursive: true });
+  await copyPreset(locale, root);
   const { timeZone, domains } = await setTimeZone(join(root, CONFIG_FILE));
   git(root, 'init', '-q', '-b', 'main');
   const skeleton = (await fs.readdir(root)).filter((name) => name !== '.git' && !domains.includes(name.normalize('NFC')));
@@ -63,6 +63,12 @@ export async function initWiki(dir: string, locale: Locale, env: NodeJS.ProcessE
   ]);
   const kept = had.get('WIKI_ROOT');
   return { root, locale, timeZone, envFile, added: changed, otherWikiRoot: kept !== undefined && resolve(kept) !== root ? kept : null };
+}
+
+/** npm pack leaves out every .gitignore, so a preset keeps its own as `gitignore`. */
+export async function copyPreset(locale: Locale, root: string): Promise<void> {
+  await fs.cp(join(PRESETS, locale), root, { recursive: true });
+  await fs.rename(join(root, 'gitignore'), join(root, '.gitignore'));
 }
 
 /** The user's own git identity when they have one, else the gateway's. */

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * The dotoriwiki command: `node src/cli.ts <command>`, or `npm run dotoriwiki -- <command>`.
  *

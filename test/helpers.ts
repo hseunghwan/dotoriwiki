@@ -2,9 +2,9 @@ import { execFileSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { after } from 'node:test';
 import { openChatStore } from '../src/chats.ts';
+import { copyPreset } from '../src/init.ts';
 import { startHttp, type HttpDeps } from '../src/http.ts';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import {
@@ -12,12 +12,10 @@ import {
   type Llm, type NewMemo, type ShrinkPhoto, type Unavailable, type Wiki, type WikiOptions,
 } from '../src/wiki/index.ts';
 
-const PRESETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'presets');
-
 /** A fresh git work tree holding a copy of a preset (presets/<locale>), with no commits. */
 export async function tempWiki(locale: 'ko' | 'en' = 'ko'): Promise<string> {
   const root = await fs.mkdtemp(join(process.env.DOTORIWIKI_TEST_TMP ?? tmpdir(), 'dotoriwiki-test-'));
-  await fs.cp(join(PRESETS, locale), root, { recursive: true });
+  await copyPreset(locale, root);
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
   return root;
 }

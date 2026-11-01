@@ -1,8 +1,16 @@
 {
   "name": "dotoriwiki",
   "version": "0.1.0",
-  "private": true,
+  "description": "Memos from your phone, filed into a git wiki by Claude Code on your own computer.",
+  "license": "MIT",
   "type": "module",
+  "bin": {
+    "dotoriwiki": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "presets"
+  ],
   "engines": {
     "node": ">=24.22"
   },
@@ -15,7 +23,10 @@
     "e2e:collect": "node scripts/e2e-collect.ts",
     "confinement": "node scripts/confinement.ts",
     "pair": "node scripts/pair.ts",
-    "check:private": "node scripts/check-private.ts"
+    "check:private": "node scripts/check-private.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "check:pack": "node scripts/pack-check.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",

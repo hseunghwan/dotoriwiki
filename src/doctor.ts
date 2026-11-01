@@ -30,7 +30,7 @@ export async function doctor(env: NodeJS.ProcessEnv, run: Run = execRun): Promis
   const node = process.versions.node;
   const min = /(\d+)\.(\d+)/.exec(await engines())!;
   const [major, minor] = node.split('.').map(Number) as [number, number];
-  if (process.features.typescript && (major > Number(min[1]) || (major === Number(min[1]) && minor >= Number(min[2])))) add('pass', `Node ${node} runs TypeScript directly`);
+  if (major > Number(min[1]) || (major === Number(min[1]) && minor >= Number(min[2]))) add('pass', `Node ${node}`);
   else add('fail', `Node ${node} is older than ${min[0]}`, `install Node ${min[0]} or newer`);
 
   const gitVersion = await version('git');
