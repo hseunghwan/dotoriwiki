@@ -6,6 +6,7 @@ let opened: Promise<SQLite.SQLiteDatabase> | null = null;
 
 function db(): Promise<SQLite.SQLiteDatabase> {
   opened ??= (async () => {
+    // The name predates dotoriwiki. Renaming it would strand the outbox of a phone that upgrades.
     const d = await SQLite.openDatabaseAsync('llmwiki.db');
     await d.execAsync(`
       PRAGMA journal_mode = WAL;

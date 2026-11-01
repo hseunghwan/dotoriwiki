@@ -20,7 +20,8 @@ shasum -a 256 "$apk" | cut -d' ' -f1
 
 if [ "${1:-}" = "--install" ]; then
   adb="$ANDROID_HOME/platform-tools/adb"
+  pkg=$(npx expo config --type public --json | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0, "utf8")).android.package)')
   "$adb" install -r "$apk" >/dev/null
-  "$adb" shell am force-stop com.cycle.llmwiki
-  "$adb" shell am start -W -n com.cycle.llmwiki/.MainActivity | grep -E 'Status|TotalTime'
+  "$adb" shell am force-stop "$pkg"
+  "$adb" shell am start -W -n "$pkg/.MainActivity" | grep -E 'Status|TotalTime'
 fi

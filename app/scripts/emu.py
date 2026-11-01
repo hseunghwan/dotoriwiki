@@ -9,7 +9,7 @@
   emu.py key <BACK|ENTER|...>    send a key event
   emu.py theme <dark|light>      switch the system night mode
   emu.py shot <file.png>         screenshot
-  emu.py open <url>              open a deep link in the app
+  emu.py open <url>              open a deep link in the app ($DOTORIWIKI_APP_ID, as app.config.ts reads it)
 """
 import os
 import re
@@ -18,6 +18,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
+PACKAGE = os.environ.get('DOTORIWIKI_APP_ID') or 'dev.dotoriwiki.app'
 ADB = os.path.join(os.environ.get('ANDROID_HOME', '/opt/homebrew/share/android-commandlinetools'), 'platform-tools', 'adb')
 
 
@@ -71,7 +72,7 @@ def main(cmd, *args):
         with open(args[0], 'wb') as f:
             f.write(adb('exec-out', 'screencap', '-p', capture=True))
     elif cmd == 'open':
-        adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', args[0], 'com.cycle.llmwiki')
+        adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', args[0], PACKAGE)
     else:
         sys.exit(__doc__)
 
