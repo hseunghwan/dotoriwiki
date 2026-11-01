@@ -8,6 +8,7 @@
 import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type { ClaudeBilling } from './claude.ts';
 import { execRun, type Run } from './enrich.ts';
 import { loadConfig, machinePaths, packageJson, withEnvFile, type Config } from './machine.ts';
 import { loadModels, profileNames, type Models } from './models.ts';
@@ -18,6 +19,11 @@ export type CheckStatus = 'pass' | 'warn' | 'fail' | 'info';
 export type Check = { readonly status: CheckStatus; readonly what: string; readonly fix: string | null };
 
 const VERSION_TIMEOUT_MS = 15_000;
+
+export const BILLING: { readonly [K in ClaudeBilling['kind']]: string } = {
+  subscription: 'claude bills the subscription it is logged in to. An ANTHROPIC_API_KEY in the environment is not passed to it. The login is not checked, because that would spend a request.',
+  api: 'claude bills the API key in ANTHROPIC_API_KEY (CLAUDE_BILLING=api), not a subscription. The key is not checked, because that would spend a request.',
+};
 
 export async function doctor(env: NodeJS.ProcessEnv, run: Run = execRun): Promise<readonly Check[]> {
   const checks: Check[] = [];
@@ -55,8 +61,9 @@ export async function doctor(env: NodeJS.ProcessEnv, run: Run = execRun): Promis
   await wikiChecks(cfg, models, add);
 
   const claude = await version(cfg.claudeBin);
-  if (claude) add('pass', `${cfg.claudeBin} --version: ${claude}. Its login is not checked, because that would spend a request.`);
+  if (claude) add('pass', `${cfg.claudeBin} --version: ${claude}`);
   else add('fail', `${cfg.claudeBin} --version did not run`, 'install Claude Code and log in once with `claude`, or set CLAUDE_BIN in the env file');
+  add('info', BILLING[cfg.claudeBilling.kind]);
 
   const usesCodex = models && [models.classify, models.edit.default, ...models.edit.profiles.values()].some((c) => c.provider === 'codex');
   if (usesCodex) {

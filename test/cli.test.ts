@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
-import { doctor, type Check } from '../src/doctor.ts';
+import { BILLING, doctor, type Check } from '../src/doctor.ts';
 import { initWiki } from '../src/init.ts';
 import { parseEnvFile } from '../src/machine.ts';
 import { parseWikiConfig, type DomainName } from '../src/wiki/index.ts';
@@ -99,6 +99,27 @@ test('doctor fails on a missing env file and names it, and says how to move one 
   const warned = (await doctor(env)).filter((c) => c.status === 'warn');
   assert.deepEqual(warned.map((c) => c.what), [`${old} holds an env file from before the rename to dotoriwiki`]);
   assert.match(warned[0]!.fix!, new RegExp(`mv ${old}/\\* ${join(dir, 'home', '.config', 'dotoriwiki')}/`));
+});
+
+test('doctor shows who claude bills, fails api billing without a key, and never prints the key', async () => {
+  const { dir, env, envFile } = await machine();
+  await initWiki(join(dir, 'wiki'), 'en', env);
+  const secret = 'sk-ant-api03-doctor-test-secret';
+  const run = async (extra: NodeJS.ProcessEnv = {}) => {
+    const checks = await doctor({ ...env, ...extra });
+    assert.ok(!checks.some((c) => `${c.what} ${c.fix}`.includes(secret)), 'the key is never printed');
+    return { failed: fails(checks), billing: checks.filter((c) => c.what.startsWith('claude bills')) };
+  };
+
+  assert.deepEqual(await run({ ANTHROPIC_API_KEY: secret }), { failed: [], billing: [{ status: 'info', what: BILLING.subscription, fix: null }] });
+
+  await fs.appendFile(envFile, 'CLAUDE_BILLING=api\n');
+  const missing = await run();
+  assert.equal(missing.failed.length, 1);
+  assert.match(missing.failed[0]!, new RegExp(`^${envFile}: CLAUDE_BILLING=api needs ANTHROPIC_API_KEY\\. Add it to the env file`));
+
+  await fs.appendFile(envFile, `ANTHROPIC_API_KEY=${secret}\n`);
+  assert.deepEqual(await run(), { failed: [], billing: [{ status: 'info', what: BILLING.api, fix: null }] });
 });
 
 test('init refuses a folder that is not empty, and keeps the keys an env file already sets', async () => {

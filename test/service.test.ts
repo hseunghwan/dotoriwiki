@@ -148,3 +148,23 @@ test('install refuses settings the gateway would refuse, before it writes the en
   assert.equal(await fs.access(join(dir, 'home', '.config', 'systemd')).then(() => true, () => false), false);
   assert.deepEqual(calls, []);
 });
+
+test('install keeps the API key in the env file: it refuses a key only the shell has, and no service file holds it', async () => {
+  for (const platform of [PLATFORMS.systemd, PLATFORMS.launchd]) {
+    const { dir, env, envFile, deps, calls } = await machine();
+    const program = [process.execPath, join(dir, 'cli.js')];
+    const secret = 'sk-ant-api03-install-test-secret';
+    const shell = { ...env, ANTHROPIC_API_KEY: secret };
+    await fs.appendFile(envFile, 'CLAUDE_BILLING=api\n');
+    await assert.rejects(install(shell, program, { ...deps, platform }), /CLAUDE_BILLING=api needs ANTHROPIC_API_KEY\. Add it to the env file/);
+    assert.deepEqual(calls, [], platform.kind);
+
+    await fs.appendFile(envFile, `ANTHROPIC_API_KEY=${secret}\n`);
+    const r = await install(shell, program, { ...deps, platform });
+    assert.deepEqual(r.config.claudeBilling, { kind: 'api', apiKey: secret });
+    const service = await fs.readFile(r.serviceFile, 'utf8');
+    assert.ok(service.includes(envFile), service);
+    assert.ok(!service.includes(secret) && !service.includes('ANTHROPIC'), service);
+    assert.equal((await fs.readFile(envFile, 'utf8')).split(secret).length, 2, 'the key stays once in the env file');
+  }
+});
