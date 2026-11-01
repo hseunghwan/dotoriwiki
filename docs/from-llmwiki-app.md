@@ -2,7 +2,7 @@
 
 dotoriwiki는 llmwiki-app과 같은 엔진입니다. 달라진 것은 엔진이 무엇을 가정하느냐입니다. llmwiki-app은 작성자 한 사람의 위키를 가정하고 그 위키의 사실을 코드에 적어 두었습니다. 도메인 이름, 시간대, 언어가 그런 사실입니다. dotoriwiki는 그 사실을 위키 쪽으로 옮겼습니다. 이제 위키가 자기 설명을 들고 다니고, 코드는 그 설명을 읽습니다.
 
-이 문서는 llmwiki-app `5d47cf7`과 dotoriwiki P3 완료 시점(`4c237fc`)을 비교합니다.
+이 문서는 llmwiki-app `5d47cf7`과 dotoriwiki P4 완료 시점(`c959047`)을 비교합니다.
 
 ## 그대로인 것: 메모가 위키가 되는 길
 
@@ -137,6 +137,7 @@ dotoriwiki는 머신 쪽 규칙을 `src/machine.ts` 하나에 모았습니다. e
 | `src/wiki/ledger.ts`의 `LEDGER_WORDS` | 코드가 다시 읽는 log.md 단어. 배포 후 바꾸지 않음 |
 | `src/machine.ts` | 머신 설정의 경로와 형식 |
 | `src/init.ts`, `src/doctor.ts`, `src/cli.ts` | 위키 만들기와 점검 |
+| `src/install.ts`, `src/service.ts`, `src/pair.ts` | 서비스 설치와 제거, plist와 systemd unit 생성, 폰 연결 QR |
 | `presets/en`, `presets/ko` | 새 위키의 출발점이자 테스트 fixture |
 | `scripts/migrate-config.ts` | 옛 표를 `dotoriwiki.yaml`로 한 번 변환 |
 | `scripts/ledger-audit.ts`, `legacy-ledger.ts` | 옛 파서와 새 파서가 같은 위키를 같게 읽는지 확인 |
@@ -150,9 +151,25 @@ dotoriwiki는 머신 쪽 규칙을 `src/machine.ts` 하나에 모았습니다. e
 | `feeds.ts`, `mcp.ts`의 `Asia/Seoul`과 피드 도메인 | `time_zone`, `feeds` |
 | `models.json`의 `edit.byDomain` | `edit.profiles`와 도메인의 `model_profile` |
 | `test/fixture/wiki` | `presets/ko` |
+| `scripts/install-launchd.sh`, `scripts/deploy.sh`, `scripts/pair.ts` | `dotoriwiki install`, `uninstall`, `pair` |
 
-## 아직 같은 것과 남은 차이
+## 바뀐 것 5. 설치와 실행
 
-아직 llmwiki-app과 같은 것도 있습니다. 패키지 이름, 설정 디렉터리 `~/.config/llmwiki`, LaunchAgent 이름, 플러그인 이름이 아직 `llmwiki`입니다. 이름 변경은 P4에서 `src/machine.ts`와 설치 스크립트 두 곳만 고치면 되게 모아 두었습니다. 앱의 패키지 id와 화면 언어는 P6입니다.
+llmwiki-app은 코드 저장소를 clone한 자리에서 `node src/main.ts`로 돌았습니다. `install-launchd.sh`가 env 파일을 매번 새로 쓰고, LaunchAgent가 zsh로 그 파일을 `source`한 뒤 게이트웨이를 띄웠습니다. macOS 전용이었고, 다시 설치하면 손으로 넣은 값이 지워졌습니다.
+
+dotoriwiki는 npm 패키지로 설치합니다. 개발할 때는 지금처럼 `.ts`를 그대로 실행하고, `npm pack` 때만 `dist/`로 빌드합니다. Node가 `node_modules` 안의 TypeScript는 실행하지 않기 때문입니다.
+
+```mermaid
+flowchart LR
+  pkg["npm install -g dotoriwiki"] --> init["dotoriwiki init"] --> install["dotoriwiki install"] --> svc["launchd 또는 systemd --user"] --> start["dotoriwiki start"]
+```
+
+`install`은 env 파일을 덮어쓰지 않고 빠진 키만 더합니다. Tailscale 주소를 CLI로 찾아 `HOST`에 넣고, plist나 systemd unit을 쓴 뒤 서비스를 시작합니다. 여러 번 돌려도 결과가 같습니다. 서비스는 `dotoriwiki start`를 실행하고, `start`가 env 파일을 직접 읽습니다. 그래서 셸 파일을 `source`하는 단계가 없습니다. `pair`는 폰 연결용 QR을 출력합니다.
+
+이름도 이때 바뀌었습니다. 설정 디렉터리는 `~/.config/dotoriwiki`, 채팅은 `~/.local/share/dotoriwiki/chats`, 서비스 이름은 `dotoriwiki.gateway`, MCP 서버와 플러그인은 `dotoriwiki`입니다. 옛 경로를 읽는 호환 코드는 없습니다. 옛 env 파일만 있는 머신에서는 `doctor`가 옮기는 명령을 알려줍니다.
+
+## 남은 차이
+
+앱의 패키지 id와 화면 언어는 P6입니다.
 
 두 저장소의 관계는 P8에서 끝납니다. 그때까지 llmwiki-app에 생기는 변경은 dotoriwiki로 손으로 옮깁니다. P8에서 작성자의 실제 위키가 dotoriwiki 게이트웨이로 넘어갑니다. 한국어 log.md가 바이트 단위로 같기 때문에, 그 과정에서 두 게이트웨이가 같은 위키를 번갈아 읽어도 상태가 어긋나지 않습니다.
