@@ -1,3 +1,4 @@
+import { copy } from '../text';
 import type { ChatDetailWire } from './wire';
 
 export const ROOT = 'root';
@@ -19,7 +20,7 @@ export type Conversation = { sessionId: string | null; turns: Turn[] };
 
 export const EMPTY: Conversation = { sessionId: null, turns: [] };
 
-export const targetLabel = (target: string) => (target === ROOT ? '전체' : target);
+export const targetLabel = (target: string) => (target === ROOT ? copy.common.all : target);
 
 export const isStreaming = (c: Conversation | undefined) => c?.turns.at(-1)?.status === 'streaming';
 
@@ -40,7 +41,7 @@ export function fromDetail(d: ChatDetailWire, local: Conversation | undefined): 
         answer: failed ? '' : t.answer,
         cited: failed ? [] : t.cited,
         status: failed ? 'error' : 'done',
-        error: failed ? '답을 받지 못했어요.' : null,
+        error: failed ? copy.chat.noAnswer : null,
         saved: p?.saved ?? 'no',
         remembered: p?.remembered ?? 'no',
       };

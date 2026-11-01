@@ -1,3 +1,5 @@
+import { copy } from '../text';
+
 /** expo-sqlite. The outbox is the only local state that matters: a memo is saved the moment it lands here. */
 export type OutboxRow = {
   /** Client UUID, also the POST idempotency key. */
@@ -95,7 +97,7 @@ async function uploadAll(store: OutboxStore, row: OutboxRow, upload: (row: Outbo
   for (const file of await store.files(row.id)) {
     if (file.uploaded) continue;
     const attempt = await upload(row, file);
-    if (attempt.kind !== 'sent') return 'error' in attempt ? { ...attempt, error: `사진 ${file.n}: ${attempt.error}` } : attempt;
+    if (attempt.kind !== 'sent') return 'error' in attempt ? { ...attempt, error: copy.network.photo(file.n, attempt.error) } : attempt;
     await store.markUploaded(row.id, file.n);
   }
   return null;

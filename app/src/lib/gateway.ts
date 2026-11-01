@@ -1,4 +1,5 @@
 import { File, UploadType } from 'expo-file-system';
+import { copy } from '../text';
 import { classify, type Attempt, type HttpOutcome, type OutboxFile } from './outbox';
 import type { Candidate, Pairing, PairingFailure } from './pairing';
 import { createSseParser } from './sse';
@@ -44,7 +45,7 @@ async function raw(base: { url: string; token: string }, method: 'GET' | 'POST' 
     } catch {}
     return { status: res.status, json };
   } catch (e) {
-    return { network: abort.signal.aborted ? `${Math.round(timeoutMs / 1000)}초 안에 응답이 없어요` : (e as Error).message };
+    return { network: abort.signal.aborted ? copy.network.timeout(Math.round(timeoutMs / 1000)) : (e as Error).message };
   } finally {
     clearTimeout(timer);
   }

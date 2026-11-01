@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { attemptsNote, failureSentence } from '../../lib/failure';
 import { gateway } from '../../lib/gateway';
-import { activityCounts, clock24, groupByDay, STAGE } from '../../lib/memos';
+import { activityCounts, clock24, groupByDay, STAGE, verdictText } from '../../lib/memos';
 import type { HeldMemoWire, MemoDetailWire, MemoListItemWire, StatusResponse } from '../../lib/wire';
 import { refreshStatus, useApp } from '../../state';
 import { useFocusPoll, useNow } from '../../ui/hooks';
@@ -11,6 +11,7 @@ import { Icon } from '../../ui/icon';
 import { Card, FailureLine, Header, s as ui, Screen, SectionTitle, SmallButton } from '../../ui/parts';
 import { PhotoCount } from '../../ui/photos';
 import { useTheme } from '../../ui/theme';
+import { copy } from '../../text';
 
 type Row = { kind: 'day'; label: string } | { kind: 'memo'; memo: MemoListItemWire };
 
@@ -21,9 +22,8 @@ function mergeById(existing: MemoListItemWire[], fresh: MemoListItemWire[]): Mem
 }
 
 function heldLine(h: HeldMemoWire): string {
-  if (h.confidence === null) return `분류하지 못해서 ${h.domain}에 두었어요. 맞으면 정리를 시작해요.`;
-  const reason = h.reason.trim();
-  return `${h.domain}일 것 같아요. ${reason ? `${reason.replace(/[.。]?$/, '.')} ` : ''}확인하면 정리를 시작해요.`;
+  if (h.confidence === null) return copy.activity.heldFallback(h.domain);
+  return copy.activity.heldGuess(h.domain, h.reason.trim());
 }
 
 function HeldCard({ held, onDone }: { held: HeldMemoWire; onDone: () => void }) {
@@ -37,21 +37,21 @@ function HeldCard({ held, onDone }: { held: HeldMemoWire; onDone: () => void }) 
     const r = await gateway.confirm(pairing, held.id);
     setBusy(false);
     if (r.ok) onDone();
-    else setError(r.failure.kind === 'http' && r.failure.status === 409 ? '이미 다른 상태가 됐어요. 새로 고쳐 볼게요.' : '확인하지 못했어요. 연결을 확인해 주세요.');
+    else setError(r.failure.kind === 'http' && r.failure.status === 409 ? copy.activity.stale : copy.activity.confirmFailed);
   }
   return (
     <Card style={st.cardBody}>
       <View style={st.inline6}>
         <Icon name="alert" size={14} color={t.warn} />
-        <Text style={{ color: t.warn, fontSize: 12 }}>분류가 애매해서 기다리는 중</Text>
+        <Text style={{ color: t.warn, fontSize: 12 }}>{copy.activity.unsure}</Text>
       </View>
       <Text style={{ color: t.fg, fontSize: 14, lineHeight: 21 }}>{held.text}</Text>
       <Text numberOfLines={3} style={{ color: t.muted, fontSize: 13, lineHeight: 19 }}>{heldLine(held)}</Text>
       {error && <Text style={{ color: t.bad, fontSize: 12 }}>{error}</Text>}
       <View style={st.buttons}>
-        <SmallButton label="맞아요" busy={busy} onPress={confirm} />
+        <SmallButton label={copy.activity.yes} busy={busy} onPress={confirm} />
         <SmallButton
-          label="다른 곳으로"
+          label={copy.activity.elsewhere}
           color={t.muted}
           onPress={() => router.push({ pathname: '/move/[id]', params: { id: held.id, from: held.domain, text: held.text } })}
         />
@@ -64,7 +64,7 @@ function FailedCard({ memo, onDone }: { memo: MemoDetailWire; onDone: () => void
   const t = useTheme();
   const pairing = useApp((a) => a.pairing);
   const [busy, setBusy] = useState(false);
-  const sentence = memo.failure ? failureSentence(memo.failure) : { text: '정리하지 못했어요.', link: null };
+  const sentence = memo.failure ? failureSentence(memo.failure) : { text: copy.failure.unknown, link: null };
   async function retry() {
     if (!pairing || !memo.domain) return;
     setBusy(true);
@@ -77,13 +77,13 @@ function FailedCard({ memo, onDone }: { memo: MemoDetailWire; onDone: () => void
       <Pressable onPress={() => router.push({ pathname: '/memo/[id]', params: { id: memo.id } })} style={{ gap: 10 }}>
         <View style={st.inline6}>
           <Icon name="x" size={14} color={t.bad} />
-          <Text style={{ color: t.bad, fontSize: 12 }}>정리하지 못했어요{memo.failure ? ` · ${memo.failure.attempts}번 시도` : ''}</Text>
+          <Text style={{ color: t.bad, fontSize: 12 }}>{copy.activity.failedLine}{memo.failure ? ` · ${copy.failure.tried(memo.failure.attempts)}` : ''}</Text>
         </View>
         <Text numberOfLines={3} style={{ color: t.fg, fontSize: 14, lineHeight: 21 }}>{memo.text}</Text>
         <FailureLine sentence={sentence} note={attemptsNote('failed', memo.failure)} style={{ color: t.muted, fontSize: 13, lineHeight: 19 }} />
       </Pressable>
       <View style={st.buttons}>
-        <SmallButton label="다시 시도" icon="retry" filled busy={busy} onPress={retry} />
+        <SmallButton label={copy.common.retry} icon="retry" filled busy={busy} onPress={retry} />
       </View>
     </Card>
   );
@@ -91,13 +91,13 @@ function FailedCard({ memo, onDone }: { memo: MemoDetailWire; onDone: () => void
 
 function Entry({ memo }: { memo: MemoListItemWire }) {
   const t = useTheme();
-  const what = memo.state === 'ingested' ? (memo.verdict ?? STAGE.ingested.label) : STAGE[memo.state].label;
+  const what = memo.state === 'ingested' ? (verdictText(memo) ?? STAGE.ingested.label) : STAGE[memo.state].label;
   return (
     <Pressable onPress={() => router.push({ pathname: '/memo/[id]', params: { id: memo.id } })} style={[st.entry, { borderBottomColor: t.line }]}>
       <Text style={{ width: 48, color: t.faint, fontSize: 12, paddingTop: 2 }}>{clock24(new Date(memo.captured_at))}</Text>
       <View style={{ flex: 1, gap: 6, minWidth: 0 }}>
         <View style={st.entryHead}>
-          <Text style={{ color: t.muted, fontSize: 13 }}>{memo.domain ?? '분류 전'}</Text>
+          <Text style={{ color: t.muted, fontSize: 13 }}>{memo.domain ?? copy.activity.unrouted}</Text>
           <Text style={{ color: t.faint, fontSize: 13 }}>·</Text>
           <Text style={{ color: memo.state === 'failed' ? t.bad : t.fg, fontSize: 13 }}>{what}</Text>
           {memo.first_page && <Text style={{ color: t.link, fontSize: 13 }}>{memo.first_page}</Text>}
@@ -154,7 +154,7 @@ export default function Activity() {
 
   const confirmCards = held.length + failed.length > 0 && (
     <View style={{ gap: 8, marginBottom: 24 }}>
-      <SectionTitle>확인이 필요해요</SectionTitle>
+      <SectionTitle>{copy.activity.needsYou}</SectionTitle>
       {held.map((h) => (
         <HeldCard key={h.id} held={h} onDone={refresh} />
       ))}
@@ -166,7 +166,7 @@ export default function Activity() {
 
   return (
     <Screen>
-      <Header title="기록" mark right={counts && <Text style={{ color: t.faint, fontSize: 12 }}>정리 중 {counts.working} · 확인 {counts.confirm}</Text>} />
+      <Header title={copy.activity.title} mark right={counts && <Text style={{ color: t.faint, fontSize: 12 }}>{copy.activity.counts(counts.working, counts.confirm)}</Text>} />
       <FlatList
         data={rows}
         keyExtractor={(r) => (r.kind === 'day' ? `day:${r.label}` : r.memo.id)}
@@ -181,8 +181,8 @@ export default function Activity() {
         }
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
-        ListFooterComponent={loadingMore ? <Text style={[ui.h2, { color: t.faint, textAlign: 'center', padding: 16 }]}>더 불러오는 중</Text> : undefined}
-        ListEmptyComponent={<Text style={{ color: t.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>아직 정리한 기록이 없어요</Text>}
+        ListFooterComponent={loadingMore ? <Text style={[ui.h2, { color: t.faint, textAlign: 'center', padding: 16 }]}>{copy.common.loadingMore}</Text> : undefined}
+        ListEmptyComponent={<Text style={{ color: t.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>{copy.activity.empty}</Text>}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

@@ -1,4 +1,5 @@
-import { activityCounts, groupByDay, mergeRecent, recentTime, withIGa, withRo } from '../memos';
+import { activityCounts, groupByDay, mergeRecent, recentTime } from '../memos';
+import { withIGa, withRo } from '../../text/ko';
 import type { OutboxRow } from '../outbox';
 import type { MemoListItemWire } from '../wire';
 

@@ -1,3 +1,4 @@
+import { copy } from '../text';
 import type { PairingPayload } from './wire';
 
 /** Stored in expo-secure-store once GET /status confirms it. */
@@ -56,19 +57,4 @@ export function parseStoredPairing(json: string | null): Pairing | null {
   }
 }
 
-const FAILURE_COPY: Record<PairingMode, Record<PairingFailure, string>> = {
-  qr: {
-    invalid: '연결용 QR이 아니에요. 맥미니 터미널에서 npm run pair로 띄운 QR을 비춰 주세요.',
-    unreachable: '연결하지 못했어요. Tailscale이 켜져 있는지 확인하고, 맥미니에서 QR을 다시 띄워 주세요.',
-    unauthorized: 'QR이 오래됐어요. 맥미니에서 QR을 다시 띄워 주세요.',
-    unexpected: '맥미니 게이트웨이가 아닌 곳에서 답이 왔어요. 맥미니에서 QR을 다시 띄워 주세요.',
-  },
-  manual: {
-    invalid: '주소를 확인해 주세요. 예: macmini.tail-xxxx.ts.net:8787',
-    unreachable: '연결하지 못했어요. Tailscale이 켜져 있는지, 주소가 맞는지 확인해 주세요.',
-    unauthorized: '토큰이 맞지 않아요. 맥미니에 적어 둔 토큰을 확인해 주세요.',
-    unexpected: '주소를 확인해 주세요. 맥미니 게이트웨이가 아닌 곳에서 답이 왔어요.',
-  },
-};
-
-export const pairingFailureCopy = (mode: PairingMode, failure: PairingFailure): string => FAILURE_COPY[mode][failure];
+export const pairingFailureCopy = (mode: PairingMode, failure: PairingFailure): string => copy.pairing[mode][failure];

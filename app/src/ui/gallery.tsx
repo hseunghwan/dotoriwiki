@@ -7,6 +7,7 @@ import { fromGallery, galleryAccess, recentPhotos, widenAccess, type GalleryAcce
 import { Icon } from './icon';
 import { PrimaryButton, s as ui, SmallButton } from './parts';
 import { useTheme } from './theme';
+import { copy } from '../text';
 
 const COLUMNS = 4;
 const GAP = 2;
@@ -64,10 +65,10 @@ export function GallerySheet({ visible, room, onClose, onDone }: { visible: bool
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
       <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top, paddingBottom: insets.bottom }}>
         <View style={[st.header, { borderBottomColor: t.line }]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="닫기" onPress={onClose} style={ui.iconButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel={copy.common.close} onPress={onClose} style={ui.iconButton}>
             <Icon name="x" color={t.fg} />
           </Pressable>
-          <Text style={[ui.h1, { color: t.fg, flex: 1 }]}>사진 고르기</Text>
+          <Text style={[ui.h1, { color: t.fg, flex: 1 }]}>{copy.photos.pick}</Text>
           <Text style={{ color: t.faint, fontSize: 13, marginRight: 16 }}>
             {picked.length}/{room}
           </Text>
@@ -75,17 +76,17 @@ export function GallerySheet({ visible, room, onClose, onDone }: { visible: bool
 
         {access?.kind === 'limited' && (
           <View style={[st.banner, { backgroundColor: t.bg2, borderBottomColor: t.line }]}>
-            <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>허용한 사진만 보여요</Text>
-            <SmallButton label="더 허용하기" onPress={() => void widenAccess(access).then(start)} />
+            <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>{copy.photos.onlyAllowed}</Text>
+            <SmallButton label={copy.photos.allowMore} onPress={() => void widenAccess(access).then(start)} />
           </View>
         )}
 
         {access?.kind === 'denied' ? (
           <View style={st.empty}>
             <Text style={{ color: t.muted, fontSize: 14, textAlign: 'center', lineHeight: 21 }}>
-              사진을 붙이려면 사진 보기를 허용해 주세요.{'\n'}찍은 장소도 함께 읽어요.
+              {copy.photos.needAccess}
             </Text>
-            <SmallButton label={access.canAskAgain ? '허용하기' : '설정 열기'} onPress={() => void widenAccess(access).then(start)} />
+            <SmallButton label={access.canAskAgain ? copy.photos.allow : copy.photos.openSettings} onPress={() => void widenAccess(access).then(start)} />
           </View>
         ) : (
           <FlatList
@@ -96,7 +97,7 @@ export function GallerySheet({ visible, room, onClose, onDone }: { visible: bool
             contentContainerStyle={{ gap: GAP }}
             onEndReached={() => void load(false)}
             onEndReachedThreshold={1}
-            ListEmptyComponent={access ? <Text style={[st.none, { color: t.faint }]}>사진이 없어요</Text> : undefined}
+            ListEmptyComponent={access ? <Text style={[st.none, { color: t.faint }]}>{copy.photos.empty}</Text> : undefined}
             renderItem={({ item }) => {
               const order = picked.findIndex((p) => p.id === item.id);
               return (
@@ -119,7 +120,7 @@ export function GallerySheet({ visible, room, onClose, onDone }: { visible: bool
 
         <View style={[st.footer, { borderTopColor: t.line }]}>
           <PrimaryButton
-            label={copying ? '가져오는 중' : picked.length > 0 ? `${picked.length}장 붙이기` : '붙이기'}
+            label={copying ? copy.photos.importing : picked.length > 0 ? copy.photos.attachN(picked.length) : copy.photos.attach}
             busy={copying}
             disabled={picked.length === 0}
             onPress={done}

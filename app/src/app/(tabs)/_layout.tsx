@@ -5,11 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../state';
 import { Icon, type IconName } from '../../ui/icon';
 import { useTheme } from '../../ui/theme';
+import { copy } from '../../text';
 
 const TABS: Record<string, { label: string; icon: IconName }> = {
-  index: { label: '메모', icon: 'pencil' },
-  chat: { label: '질문', icon: 'chat' },
-  activity: { label: '기록', icon: 'history' },
+  index: { label: copy.tabs.index, icon: 'pencil' },
+  chat: { label: copy.tabs.chat, icon: 'chat' },
+  activity: { label: copy.tabs.activity, icon: 'history' },
 };
 
 function BottomNav({ state, navigateToTab }: BottomTabBarProps) {

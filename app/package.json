@@ -53,6 +53,9 @@
     "preset": "jest-expo",
     "testMatch": [
       "<rootDir>/src/**/__tests__/**/*.test.ts"
+    ],
+    "setupFiles": [
+      "<rootDir>/jest.setup.ts"
     ]
   }
 }
