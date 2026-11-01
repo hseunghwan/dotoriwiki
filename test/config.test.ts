@@ -11,13 +11,13 @@ import { renderDomainCatalog, renderPageTypes } from '../src/wiki/config.ts';
 import { parseWikiConfig, textFor, WikiConfigError, type ConfigParse, type DomainName, type WikiOptions } from '../src/wiki/index.ts';
 import { closeAtEnd, commitSubjects, editConfig, fakeLlm, headFile, memo, open, readText, tempWiki, ulid } from './helpers.ts';
 
-const FIX = join(dirname(fileURLToPath(import.meta.url)), 'fixture');
-const en = readFileSync(join(FIX, 'wiki-en', 'dotoriwiki.yaml'), 'utf8');
-const ko = readFileSync(join(FIX, 'wiki', 'dotoriwiki.yaml'), 'utf8');
+const PRESETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'presets');
+const en = readFileSync(join(PRESETS, 'en', 'dotoriwiki.yaml'), 'utf8');
+const ko = readFileSync(join(PRESETS, 'ko', 'dotoriwiki.yaml'), 'utf8');
 const machine = { modelProfiles: new Set(['default', 'strong']) };
 const keys = (r: ConfigParse) => (r.ok ? [] : r.problems.map((p) => p.key));
 
-test('the English fixture parses in written order with its page types', () => {
+test('the English preset parses in written order with its page types', () => {
   const r = parseWikiConfig(en, machine);
   assert.ok(r.ok);
   assert.deepEqual(r.warnings, []);
@@ -33,7 +33,7 @@ test('the English fixture parses in written order with its page types', () => {
   assert.equal(c.feeds.size, 0);
 });
 
-test('the Korean fixture parses, and an NFD domain key is read as NFC', () => {
+test('the Korean preset parses, and an NFD domain key is read as NFC', () => {
   for (const text of [ko, ko.replace('미루기 아카이빙:', '미루기 아카이빙:'.normalize('NFD'))]) {
     const r = parseWikiConfig(text, machine);
     assert.ok(r.ok);

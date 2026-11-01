@@ -24,7 +24,7 @@ async function legacyWiki(): Promise<string> {
 test('migrating the legacy fixture yields exactly the current fixture, in one commit, once', async () => {
   const root = await legacyWiki();
   assert.equal(await migrate(root, flags), 'migrated');
-  for (const f of ['dotoriwiki.yaml', ...CLAUDE_FILES]) assert.equal(await readText(join(root, f)), await readText(join(FIX, 'wiki', f)), f);
+  for (const f of ['dotoriwiki.yaml', ...CLAUDE_FILES]) assert.equal(await readText(join(root, f)), await readText(join(FIX, '..', '..', 'presets', 'ko', f)), f);
   assert.deepEqual(commitSubjects(root), ['legacy', 'config: move the domain and page-type tables into dotoriwiki.yaml']);
   assert.equal(git(root, 'status', '--porcelain'), '');
   assert.equal(await migrate(root, flags), 'already-migrated');

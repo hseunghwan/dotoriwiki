@@ -12,12 +12,12 @@ import {
   type Llm, type NewMemo, type ShrinkPhoto, type Unavailable, type Wiki, type WikiOptions,
 } from '../src/wiki/index.ts';
 
-const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixture');
+const PRESETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'presets');
 
-/** A fresh git work tree holding a copy of a fixture wiki, with no commits: `ko` (test/fixture/wiki) or `en` (test/fixture/wiki-en). */
-export async function tempWiki(fixture: 'ko' | 'en' = 'ko'): Promise<string> {
+/** A fresh git work tree holding a copy of a preset (presets/<locale>), with no commits. */
+export async function tempWiki(locale: 'ko' | 'en' = 'ko'): Promise<string> {
   const root = await fs.mkdtemp(join(process.env.LLMWIKI_TEST_TMP ?? tmpdir(), 'llmwiki-test-'));
-  await fs.cp(join(FIXTURES, fixture === 'ko' ? 'wiki' : 'wiki-en'), root, { recursive: true });
+  await fs.cp(join(PRESETS, locale), root, { recursive: true });
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
   return root;
 }
@@ -158,7 +158,7 @@ export function closeAtEnd(close: () => Promise<void>): () => Promise<void> {
   return once;
 }
 
-/** A gateway on a fresh fixture wiki and an empty chat store, with a `call` that parses JSON replies. */
+/** A gateway on a fresh preset wiki and an empty chat store, with a `call` that parses JSON replies. */
 export async function serveHttp(opts: { chat?: HttpDeps['chat']; now?: () => Date } = {}) {
   const root = await tempWiki();
   const chatsDir = await fs.mkdtemp(join(process.env.LLMWIKI_TEST_TMP ?? tmpdir(), 'llmwiki-chats-'));
