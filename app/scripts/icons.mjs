@@ -41,12 +41,17 @@ const adaptiveGlyph = (ADAPTIVE.viewport / ADAPTIVE.canvas) * PX * GLYPH_IN_TILE
 const foreground = render(glyph(adaptiveGlyph, PX / 2));
 assertInsideSafeZone(foreground);
 
+const tile = `<rect width="${PX}" height="${PX}" rx="${PX * ACORN_TILE_RADIUS}" fill="${ACORN_TILE_COLOR}"/>${glyph(PX * GLYPH_IN_TILE, PX / 2)}`;
+
 const files = {
   'android-icon-foreground.png': foreground,
-  'splash-icon.png': render(`<rect width="${PX}" height="${PX}" rx="${PX * ACORN_TILE_RADIUS}" fill="${ACORN_TILE_COLOR}"/>${glyph(PX * GLYPH_IN_TILE, PX / 2)}`),
+  'splash-icon.png': render(tile),
 };
 
 for (const [name, image] of Object.entries(files)) {
   writeFileSync(join(OUT, name), image.asPng());
   console.log(join('assets', 'images', name));
 }
+
+writeFileSync(join(OUT, '..', '..', '..', 'docs', 'assets', 'logo.svg'), `${svg(tile)}\n`);
+console.log(join('..', 'docs', 'assets', 'logo.svg'));

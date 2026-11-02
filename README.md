@@ -1,14 +1,64 @@
-# dotoriwiki
+<p align="center">
+  <img src="docs/assets/logo.svg" width="112" height="112" alt="dotoriwiki">
+</p>
 
-English | [한국어](README.ko.md)
+<h1 align="center">dotoriwiki</h1>
 
-Jot a line on your phone, or let your coding agent send one. A gateway on your own computer picks the domain the memo belongs to, such as `journal` or `learning`. Then `claude -p` files the memo into that domain's wiki and the gateway commits the change to git. The wiki is a folder of Markdown pages, so you read it in Obsidian or any editor.
+<p align="center">
+  <strong>Write it down in two seconds. Claude files it into your wiki.</strong>
+</p>
 
-```
-phone app or /memo  ->  gateway on your computer  ->  claude -p  ->  <domain>/wiki/*.md  ->  git commit
-```
+<p align="center">
+  A memo app for your phone and your coding agent. A gateway on your own computer reads each memo, files it into a Markdown wiki with Claude Code, and commits the change to git.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-7559dd" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A524.22-7559dd" alt="Node 24.22 or later">
+  <img src="https://img.shields.io/badge/gateway-macOS%20%7C%20Linux-7559dd" alt="Gateway on macOS or Linux">
+  <img src="https://img.shields.io/badge/app-Android-7559dd" alt="Android app">
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="docs/cli.md">Docs</a> ·
+  <a href="README.ko.md">한국어</a>
+</p>
+
+---
+
+## Why dotoriwiki
+
+Notes pile up. A thought on the bus, a link a friend sent, a lesson from a bug at work. They land in a notes app, and nobody goes back to sort them, so you never find them again.
+
+dotoriwiki does the sorting for you. You write one line and move on. Within a minute or two the memo is a page in the right part of your wiki, linked to what you already wrote, with a git commit you can read or undo. The wiki is plain Markdown on your own disk, so it stays yours after any app is gone.
 
 Dotori is Korean for acorn. A squirrel buries acorns anywhere, digs them up in winter, and the ones it forgets grow into oaks.
+
+## What you get
+
+- **Capture first.** The Android app opens straight to the input box. A memo is saved on the phone before it is sent, so a bad connection loses nothing. Photos keep their EXIF, and links to videos get a transcript.
+- **Filed for you.** A classifier picks the domain, such as `journal` or `learning`. When it is unsure, the memo waits for you to confirm it in the app. Then `claude -p` edits that domain's pages.
+- **A record you can trust.** Each memo is one git commit, and each domain keeps a ledger in `wiki/log.md`. When you edit a page by hand, the gateway commits your edit first.
+- **Plain files you own.** The wiki is a folder of Markdown pages and an Obsidian vault. The gateway never pushes it anywhere.
+- **Private by default.** The gateway runs on your computer and answers only on your Tailscale address, with a token. There is no cloud service.
+- **Your coding agent writes too.** The gateway serves MCP. In Claude Code, `/memo` saves a note with the project and branch it came from.
+- **Your rules.** Domains, page types and the wiki's language live in `dotoriwiki.yaml`. A saved change applies without a restart. Wikis start in English or Korean.
+
+## How it works
+
+```mermaid
+flowchart LR
+  phone["Phone app"] --> gw
+  agent["Coding agent<br/>(/memo, MCP)"] --> gw
+  gw["Gateway<br/>on your computer"] --> classify["Pick the domain"]
+  classify --> edit["claude -p edits<br/>the domain's pages"]
+  edit --> wiki[("&lt;domain&gt;/wiki/*.md<br/>git commit")]
+  wiki --> obsidian["Read in Obsidian<br/>or any editor"]
+```
+
+The gateway writes every memo to `inbox/` before it answers, so a memo survives a crash. Each domain has one worker, so two memos never edit the same domain at once, while different domains run in parallel. A failed edit is tried up to three times, and every attempt lands in the ledger.
 
 ## What you need
 
@@ -159,4 +209,22 @@ Each memo runs `claude -p` at least twice: once to pick the domain (Haiku by def
 - [docs/plan.md](docs/plan.md): the plan from one person's setup to this release.
 - [docs/from-llmwiki-app.md](docs/from-llmwiki-app.md), in Korean: what changed from llmwiki-app, the private setup this project grew out of.
 
-MIT licensed.
+## Status
+
+dotoriwiki is version 0.1. It grew out of one person's daily setup, which has filed several hundred memos so far. The phone app is Android only, and photos need a Mac. Expect the settings file and the API to change before 1.0.
+
+## Contributing
+
+Issues and pull requests are welcome. Before you send one:
+
+```sh
+npm ci
+npm test
+npm run check:private
+```
+
+`npm test` type-checks the gateway and runs its tests. The app has its own tests in `app/` (`npm ci && npm test` there). `check:private` fails if a file matches your list of private patterns, so a home path or a real address never lands in a commit. The pattern list lives in `~/.config/dotoriwiki/private-patterns`, outside the repository.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

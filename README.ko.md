@@ -1,14 +1,64 @@
-# dotoriwiki
+<p align="center">
+  <img src="docs/assets/logo.svg" width="112" height="112" alt="dotoriwiki">
+</p>
 
-[English](README.md) | 한국어
+<h1 align="center">dotoriwiki</h1>
 
-폰에서 한 줄 적거나, 코딩 에이전트가 메모를 보냅니다. 내 컴퓨터에서 도는 게이트웨이가 그 메모가 속할 도메인을 고릅니다. `일상`이나 `스터디` 같은 도메인입니다. 그다음 `claude -p`가 그 도메인의 위키에 메모를 정리하고, 게이트웨이가 바뀐 내용을 git에 커밋합니다. 위키는 Markdown 페이지가 든 폴더라서 Obsidian이나 아무 편집기로 읽습니다.
+<p align="center">
+  <strong>2초 만에 적으면, Claude가 위키에 정리합니다.</strong>
+</p>
 
-```
-폰 앱 또는 /memo  ->  내 컴퓨터의 게이트웨이  ->  claude -p  ->  <domain>/wiki/*.md  ->  git commit
-```
+<p align="center">
+  폰과 코딩 에이전트에서 쓰는 메모 앱입니다. 내 컴퓨터에서 도는 게이트웨이가 메모를 읽고, Claude Code로 Markdown 위키에 정리한 다음, git에 커밋합니다.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-7559dd" alt="MIT 라이선스"></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A524.22-7559dd" alt="Node 24.22 이상">
+  <img src="https://img.shields.io/badge/gateway-macOS%20%7C%20Linux-7559dd" alt="게이트웨이는 macOS 또는 Linux">
+  <img src="https://img.shields.io/badge/app-Android-7559dd" alt="Android 앱">
+</p>
+
+<p align="center">
+  <a href="#빠른-시작">빠른 시작</a> ·
+  <a href="#동작-방식">동작 방식</a> ·
+  <a href="docs/cli.md">문서</a> ·
+  <a href="README.md">English</a>
+</p>
+
+---
+
+## 왜 dotoriwiki인가
+
+메모는 쌓이기만 합니다. 버스에서 떠오른 생각, 친구가 보내 준 링크, 회사에서 버그를 잡다 배운 것. 메모 앱에 들어간 뒤로 아무도 정리하지 않으니 다시 찾지 못합니다.
+
+dotoriwiki가 그 정리를 대신합니다. 한 줄 적고 하던 일로 돌아가면 됩니다. 1~2분 안에 그 메모는 위키의 알맞은 자리에 페이지로 들어가고, 이미 써 둔 페이지와 링크로 이어집니다. 바뀐 내용은 git 커밋으로 남아 읽거나 되돌릴 수 있습니다. 위키는 내 디스크에 있는 평범한 Markdown이라, 어떤 앱이 사라져도 내 것으로 남습니다.
 
 다람쥐는 도토리를 아무 데나 묻어 두고 겨울에 꺼내 먹습니다. 잊어버린 도토리는 참나무가 됩니다.
+
+## 할 수 있는 것
+
+- **적는 게 먼저.** Android 앱은 열면 바로 입력창입니다. 메모는 보내기 전에 폰에 먼저 저장되어서, 연결이 나빠도 잃지 않습니다. 사진은 EXIF를 그대로 지니고, 영상 링크에는 자막이 붙습니다.
+- **정리는 알아서.** 분류기가 `일상`이나 `스터디` 같은 도메인을 고릅니다. 확신이 없으면 앱에서 내가 확인할 때까지 기다립니다. 그다음 `claude -p`가 그 도메인의 페이지를 고칩니다.
+- **믿을 수 있는 기록.** 메모 하나가 git 커밋 하나입니다. 도메인마다 `wiki/log.md`에 장부를 남깁니다. 내가 페이지를 직접 고치면 게이트웨이가 그 수정부터 커밋합니다.
+- **내가 가진 평범한 파일.** 위키는 Markdown 페이지가 든 폴더이고 그대로 Obsidian vault입니다. 게이트웨이는 위키를 어디에도 push하지 않습니다.
+- **기본이 비공개.** 게이트웨이는 내 컴퓨터에서 돌고, 토큰을 가진 요청에만 내 Tailscale 주소로 답합니다. 클라우드 서비스가 없습니다.
+- **코딩 에이전트도 씁니다.** 게이트웨이가 MCP를 제공합니다. Claude Code에서 `/memo`를 쓰면 어느 프로젝트, 어느 브랜치에서 쓴 메모인지 함께 남습니다.
+- **규칙은 내가.** 도메인, 페이지 종류, 위키 언어는 `dotoriwiki.yaml`에 있습니다. 저장하면 재시작 없이 바로 적용됩니다. 위키는 영어나 한국어로 시작합니다.
+
+## 동작 방식
+
+```mermaid
+flowchart LR
+  phone["폰 앱"] --> gw
+  agent["코딩 에이전트<br/>(/memo, MCP)"] --> gw
+  gw["내 컴퓨터의<br/>게이트웨이"] --> classify["도메인 고르기"]
+  classify --> edit["claude -p가 도메인<br/>페이지를 고침"]
+  edit --> wiki[("&lt;domain&gt;/wiki/*.md<br/>git commit")]
+  wiki --> obsidian["Obsidian이나<br/>아무 편집기로 읽기"]
+```
+
+게이트웨이는 응답하기 전에 메모를 `inbox/`에 먼저 씁니다. 그래서 게이트웨이가 죽어도 메모는 남습니다. 도메인마다 작업자가 하나라서 한 도메인을 두 메모가 동시에 고치는 일이 없고, 서로 다른 도메인은 나란히 처리됩니다. 고치기에 실패하면 세 번까지 다시 시도하고, 시도할 때마다 장부에 남습니다.
 
 ## 필요한 것
 
@@ -159,4 +209,22 @@ claude mcp add --transport http dotoriwiki http://<address>:8787/mcp --header "A
 - [docs/plan.md](docs/plan.md): 한 사람의 설정에서 이 릴리스까지의 계획.
 - [docs/from-llmwiki-app.md](docs/from-llmwiki-app.md): 이 프로젝트의 전신인 llmwiki-app과 달라진 점.
 
-MIT 라이선스.
+## 현재 상태
+
+dotoriwiki는 0.1 버전입니다. 한 사람이 매일 쓰던 설정에서 시작했고, 지금까지 메모 수백 개를 정리했습니다. 폰 앱은 Android만 있고, 사진은 Mac에서만 됩니다. 1.0 전까지 설정 파일과 API는 바뀔 수 있습니다.
+
+## 기여하기
+
+이슈와 풀 리퀘스트를 환영합니다. 보내기 전에 이렇게 확인해 주세요.
+
+```sh
+npm ci
+npm test
+npm run check:private
+```
+
+`npm test`는 게이트웨이를 타입 검사하고 테스트를 돌립니다. 앱 테스트는 `app/`에 따로 있습니다(거기서 `npm ci && npm test`). `check:private`는 파일이 내 개인 정보 패턴 목록에 걸리면 실패해서, 홈 경로나 실제 주소가 커밋에 들어가지 않게 막습니다. 패턴 목록은 저장소 밖 `~/.config/dotoriwiki/private-patterns`에 둡니다.
+
+## 라이선스
+
+MIT. [LICENSE](LICENSE)를 보세요.
