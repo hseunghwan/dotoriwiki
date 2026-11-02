@@ -76,13 +76,13 @@ flowchart LR
 1. `dotoriwiki` 명령을 설치합니다.
 
    ```sh
-   npm install -g dotoriwiki
+   npm install -g https://github.com/hseunghwan/dotoriwiki/releases/latest/download/dotoriwiki.tgz
    ```
 
-   npm에 첫 릴리스가 올라가기 전에는 이 저장소를 clone해서 설치합니다.
+   최신 릴리스에 첨부된 패키지를 설치합니다. 소스에서 설치하려면 이렇게 합니다.
 
    ```sh
-   git clone <repo> dotoriwiki
+   git clone https://github.com/hseunghwan/dotoriwiki.git
    cd dotoriwiki
    npm ci
    npm pack
@@ -114,7 +114,7 @@ flowchart LR
 
    마지막 몇 줄에 게이트웨이가 응답하는 주소가 나옵니다. `http://100.101.102.103:8787` 같은 주소입니다. 서비스는 로그인할 때 다시 시작하고, Linux에서는 부팅할 때도 시작합니다. Tailscale이 없으면 `http://127.0.0.1:8787`에서 응답하고, `install`이 그렇다고 알려 줍니다.
 
-5. 폰을 연결합니다. 폰에 Tailscale을 설치하고 같은 tailnet으로 로그인합니다. 이 저장소의 Releases 페이지에서 최신 릴리스의 APK를 받아 폰에서 엽니다. Android가 그 앱의 설치 허용을 물어봅니다. 첫 릴리스 전에는 [docs/spec-app.md](docs/spec-app.md)대로 APK를 빌드합니다. 그다음 QR을 띄우고 앱 첫 화면에서 스캔합니다.
+5. 폰을 연결합니다. 폰에 Tailscale을 설치하고 같은 tailnet으로 로그인합니다. 이 저장소의 Releases 페이지에서 최신 릴리스의 APK를 받아 폰에서 엽니다. Android가 그 앱의 설치 허용을 물어봅니다. APK를 직접 빌드하려면 [docs/spec-app.md](docs/spec-app.md)를 따릅니다. 그다음 QR을 띄우고 앱 첫 화면에서 스캔합니다.
 
    ```sh
    dotoriwiki pair
@@ -153,7 +153,7 @@ flowchart LR
 Claude Code에서는 이 저장소의 플러그인을 설치합니다. 플러그인은 MCP 서버와 `/memo` 명령을 더합니다.
 
 ```sh
-claude plugin marketplace add <repo>
+claude plugin marketplace add hseunghwan/dotoriwiki
 claude plugin install dotoriwiki@dotoriwiki
 ```
 

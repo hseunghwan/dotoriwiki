@@ -76,13 +76,13 @@ These steps take about ten minutes. They make a wiki in `~/wiki`.
 1. Install the `dotoriwiki` command.
 
    ```sh
-   npm install -g dotoriwiki
+   npm install -g https://github.com/hseunghwan/dotoriwiki/releases/latest/download/dotoriwiki.tgz
    ```
 
-   Until the first release is on npm, install it from a clone of this repository instead:
+   That installs the package attached to the latest release. To install from source instead:
 
    ```sh
-   git clone <repo> dotoriwiki
+   git clone https://github.com/hseunghwan/dotoriwiki.git
    cd dotoriwiki
    npm ci
    npm pack
@@ -114,7 +114,7 @@ These steps take about ten minutes. They make a wiki in `~/wiki`.
 
    The last lines say where the gateway answers, such as `http://100.101.102.103:8787`. The service starts again when you log in, and on Linux also at boot. Without Tailscale it answers at `http://127.0.0.1:8787`, and `install` says so.
 
-5. Pair the phone. Install Tailscale on the phone and log in to the same tailnet. Download the APK from the latest release on this repository's Releases page and open it on the phone. Android asks you to allow installs from that app. Until the first release, build the APK as [docs/spec-app.md](docs/spec-app.md) says. Then show the QR and scan it from the app's first screen.
+5. Pair the phone. Install Tailscale on the phone and log in to the same tailnet. Download the APK from the latest release on this repository's Releases page and open it on the phone. Android asks you to allow installs from that app. To build the APK yourself, follow [docs/spec-app.md](docs/spec-app.md). Then show the QR and scan it from the app's first screen.
 
    ```sh
    dotoriwiki pair
@@ -153,7 +153,7 @@ The gateway also serves MCP at `/mcp`, with the same token. Its tools are `write
 For Claude Code, install the plugin from this repository. It adds the MCP server and a `/memo` command.
 
 ```sh
-claude plugin marketplace add <repo>
+claude plugin marketplace add hseunghwan/dotoriwiki
 claude plugin install dotoriwiki@dotoriwiki
 ```
 
