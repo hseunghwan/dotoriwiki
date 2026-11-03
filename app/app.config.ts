@@ -34,7 +34,8 @@ const config: ExpoConfig = {
   plugins: [
     'expo-router',
     ['expo-splash-screen', { backgroundColor: '#ffffff', image: './assets/images/splash-icon.png', imageWidth: 160, dark: { backgroundColor: '#1e1e1e' } }],
-    ['expo-build-properties', { android: { usesCleartextTraffic: true } }],
+    // Compressed native libraries roughly halve the APK people download, at the cost of a larger install.
+    ['expo-build-properties', { android: { usesCleartextTraffic: true, useLegacyPackaging: true } }],
     './plugins/with-release-signing',
     'expo-sqlite',
     ['expo-camera', { recordAudioAndroid: false, microphonePermission: false, barcodeScannerEnabled: true }],
