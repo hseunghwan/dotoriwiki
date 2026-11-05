@@ -5,11 +5,11 @@
 <h1 align="center">dotoriwiki</h1>
 
 <p align="center">
-  <strong>Write it down in two seconds. Claude files it into your wiki.</strong>
+  <strong>Save a memo. Claude organizes it in your Markdown wiki.</strong>
 </p>
 
 <p align="center">
-  A memo app for your phone and your coding agent. A gateway on your own computer reads each memo, files it into a Markdown wiki with Claude Code, and commits the change to git.
+  Send memos from your phone or coding agent. A gateway running on your computer uses Claude Code to organize them in a Markdown wiki and commit the changes to git.
 </p>
 
 <p align="center">
@@ -28,23 +28,23 @@
 
 ---
 
-## Why dotoriwiki
+## About
 
-Notes pile up. A thought on the bus, a link a friend sent, a lesson from a bug at work. They land in a notes app, and nobody goes back to sort them, so you never find them again.
+I built dotoriwiki to keep track of thoughts, links, and things I learned while working. Saving them in a notes app was easy; organizing them so I could find them later took more effort.
 
-dotoriwiki does the sorting for you. You write one line and move on. Within a minute or two the memo is a page in the right part of your wiki, linked to what you already wrote, with a git commit you can read or undo. The wiki is plain Markdown on your own disk, so it stays yours after any app is gone.
+dotoriwiki uses Claude Code to file each memo into a wiki and link it to existing pages. Processing usually takes a minute or two. Changes are recorded in git, so you can review or revert them. The wiki is stored as Markdown files on your computer and can be opened without dotoriwiki.
 
-Dotori is Korean for acorn. A squirrel buries acorns anywhere, digs them up in winter, and the ones it forgets grow into oaks.
+Dotori (도토리) means acorn in Korean. The name comes from squirrels storing acorns for later.
 
-## What you get
+## Features
 
-- **Capture first.** The Android app opens straight to the input box. A memo is saved on the phone before it is sent, so a bad connection loses nothing. Photos keep their EXIF, and links to videos get a transcript.
-- **Filed for you.** A classifier picks the domain, such as `journal` or `learning`. When it is unsure, the memo waits for you to confirm it in the app. Then `claude -p` edits that domain's pages.
-- **A record you can trust.** Each memo is one git commit, and each domain keeps a ledger in `wiki/log.md`. When you edit a page by hand, the gateway commits your edit first.
-- **Plain files you own.** The wiki is a folder of Markdown pages and an Obsidian vault. The gateway never pushes it anywhere.
-- **Private by default.** The gateway runs on your computer and answers only on your Tailscale address, with a token. There is no cloud service.
-- **Your coding agent writes too.** The gateway serves MCP. In Claude Code, `/memo` saves a note with the project and branch it came from.
-- **Your rules.** Domains, page types and the wiki's language live in `dotoriwiki.yaml`. A saved change applies without a restart. Wikis start in English or Korean.
+- **Offline capture.** The Android app opens straight to the input box. A memo is saved on the phone before it is sent, and can be sent when the connection returns. Photos keep their EXIF, and links to videos get a transcript.
+- **Automatic filing.** A classifier picks the domain, such as `journal` or `learning`. When it is unsure, the memo waits for you to confirm it in the app. Then `claude -p` edits that domain's pages.
+- **Git history.** Each memo is one git commit, and each domain keeps a ledger in `wiki/log.md`. When you edit a page by hand, the gateway commits your edit first.
+- **Markdown and Obsidian.** The wiki is a folder of Markdown pages and an Obsidian vault. The gateway never pushes it anywhere.
+- **Local gateway.** The gateway runs on your computer and answers only on your Tailscale address, with a token. There is no hosted dotoriwiki service.
+- **MCP integration.** The gateway serves MCP. In Claude Code, `/memo` saves a note with the project and branch it came from.
+- **Wiki configuration.** Domains, page types and the wiki's language live in `dotoriwiki.yaml`. A saved change applies without a restart. Wikis start in English or Korean.
 
 ## How it works
 
@@ -71,7 +71,7 @@ The gateway writes every memo to `inbox/` before it answers, so a memo survives 
 
 ## Quick start
 
-These steps take about ten minutes. They make a wiki in `~/wiki`.
+The following steps create a wiki in `~/wiki`.
 
 1. Install the `dotoriwiki` command.
 
@@ -129,9 +129,9 @@ These steps take about ten minutes. They make a wiki in `~/wiki`.
      curl -sS "http://$HOST:$PORT/memos" -H "Authorization: Bearer $GATEWAY_TOKEN" -H 'Content-Type: application/json' --data-binary @-
    ```
 
-   The gateway answers `{"id":"…","status":"accepted"}`. The memo is safe on disk from this point.
+   The gateway answers `{"id":"…","status":"accepted"}`. The memo has now been written to disk.
 
-7. Watch it get filed. A memo takes a minute or two. The app's activity tab shows it, and so does the gateway's status:
+7. Check processing status. Processing usually takes a minute or two. The app's activity tab shows it, and so does the gateway's status:
 
    ```sh
    curl -sS "http://$HOST:$PORT/status" -H "Authorization: Bearer $GATEWAY_TOKEN"
@@ -200,7 +200,7 @@ The gateway commits to the wiki's git repository and never pushes. Each filed me
 
 Each memo runs `claude -p` at least twice: once to pick the domain (Haiku by default) and once to edit the pages (Sonnet by default). A failed edit is tried again, up to three attempts. A question in the app's chat runs it once more per turn. By default these calls use the subscription Claude Code is logged in to, and count toward its usage limits. With `CLAUDE_BILLING=api` and `ANTHROPIC_API_KEY` in `gateway.env`, they bill the API key per token instead. [docs/cli.md](docs/cli.md#who-pays-for-claude) has the details, and `models.json` picks other models.
 
-## More
+## Documentation
 
 - [docs/cli.md](docs/cli.md): every command, the env file, and the service.
 - [docs/spec-app.md](docs/spec-app.md): the Android app and how to build it.
@@ -223,7 +223,7 @@ npm test
 npm run check:private
 ```
 
-`npm test` type-checks the gateway and runs its tests. The app has its own tests in `app/` (`npm ci && npm test` there). `check:private` fails if a file matches your list of private patterns, so a home path or a real address never lands in a commit. The pattern list lives in `~/.config/dotoriwiki/private-patterns`, outside the repository.
+`npm test` type-checks the gateway and runs its tests. The app has its own tests in `app/` (`npm ci && npm test` there). `check:private` fails if a file matches your list of private patterns, to help catch home paths and real addresses before committing. The pattern list lives in `~/.config/dotoriwiki/private-patterns`, outside the repository.
 
 ## License
 
