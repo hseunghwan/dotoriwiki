@@ -14,7 +14,7 @@ if (!/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(id)) {
 const config: ExpoConfig = {
   name: name ?? 'Dotori',
   slug: 'dotoriwiki',
-  version: '0.1.0',
+  version: '0.1.1',
   orientation: 'portrait',
   scheme: 'dotoriwiki',
   userInterfaceStyle: 'automatic',
@@ -23,6 +23,8 @@ const config: ExpoConfig = {
   locales: name ? undefined : { ko: { android: { app_name: '도토리' } } },
   android: {
     package: id,
+    // Raise with every release so Android installs the new APK over the old one.
+    versionCode: 2,
     adaptiveIcon: {
       backgroundColor: '#7559dd',
       foregroundImage: './assets/images/android-icon-foreground.png',
