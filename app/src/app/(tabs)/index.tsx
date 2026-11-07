@@ -243,7 +243,8 @@ const st = StyleSheet.create({
   badge: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 28, paddingHorizontal: 10, borderRadius: 14 },
   dot: { width: 6, height: 6, borderRadius: 3 },
   compose: { padding: 16, borderRadius: 12, borderWidth: 1, gap: 12 },
-  textarea: { minHeight: 154, fontSize: 16, lineHeight: 25.6, padding: 0 },
+  // Past ten lines the field scrolls inside itself, so a long memo cannot outgrow the screen.
+  textarea: { minHeight: 154, maxHeight: 256, fontSize: 16, lineHeight: 25.6, padding: 0 },
   composeMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   inline4: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   loc: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 28, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1 },
