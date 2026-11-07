@@ -284,6 +284,10 @@ export const en: Copy = {
     about: 'About',
     gatewayVersion: 'Gateway version',
     appVersion: 'App version',
+    checkingUpdate: 'Checking for a new version',
+    latestVersion: 'You have the latest version',
+    getUpdate: (v) => `Get the new version, ${v}`,
+    updateFailed: 'Could not check for a new version. Check again',
   },
   acorn: {
     story:

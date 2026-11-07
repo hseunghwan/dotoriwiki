@@ -1,9 +1,11 @@
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
+import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { outbox } from '../lib/db';
+import { checkForUpdate, type UpdateCheck } from '../lib/update';
 import type { OutboxRow } from '../lib/outbox';
 import type { MemoRequest } from '../lib/wire';
 import { flushNow, refreshStatus, updateSettings, useApp, type ThemePref } from '../state';
@@ -39,6 +41,43 @@ function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => void; la
       style={[st.switch, { backgroundColor: on ? t.btn : t.seg, justifyContent: on ? 'flex-end' : 'flex-start' }]}
     >
       <View style={[st.knob, { backgroundColor: t.knob }]} />
+    </Pressable>
+  );
+}
+
+const APP_VERSION = Constants.expoConfig?.version;
+
+/** Asks GitHub once per visit; a newer release opens its page, a failed check can be retried. */
+function UpdateRow() {
+  const t = useTheme();
+  const [check, setCheck] = useState<UpdateCheck | 'checking'>('checking');
+
+  async function run() {
+    if (!APP_VERSION) return setCheck({ kind: 'failed' });
+    setCheck('checking');
+    setCheck(await checkForUpdate(APP_VERSION));
+  }
+
+  useEffect(() => {
+    void run();
+  }, []);
+
+  if (check === 'checking' || check.kind === 'current') {
+    return (
+      <View style={st.action}>
+        <Text style={{ color: t.faint, fontSize: 14 }}>{check === 'checking' ? copy.settings.checkingUpdate : copy.settings.latestVersion}</Text>
+      </View>
+    );
+  }
+  return (
+    <Pressable
+      accessibilityRole={check.kind === 'newer' ? 'link' : 'button'}
+      onPress={check.kind === 'newer' ? () => void Linking.openURL(check.url) : run}
+      style={st.action}
+    >
+      <Text style={{ color: check.kind === 'newer' ? t.link : t.warn, fontSize: 14 }}>
+        {check.kind === 'newer' ? copy.settings.getUpdate(check.version) : copy.settings.updateFailed}
+      </Text>
     </Pressable>
   );
 }
@@ -183,9 +222,10 @@ export default function Settings() {
             <Row label={copy.settings.gatewayVersion}>
               <Text style={{ color: t.muted, fontSize: 14 }}>{pairing?.server ?? '-'}</Text>
             </Row>
-            <Row label={copy.settings.appVersion} last>
-              <Text style={{ color: t.muted, fontSize: 14 }}>{Constants.expoConfig?.version ?? '-'}</Text>
+            <Row label={copy.settings.appVersion}>
+              <Text style={{ color: t.muted, fontSize: 14 }}>{APP_VERSION ?? '-'}</Text>
             </Row>
+            <UpdateRow />
           </Card>
         </View>
       </ScrollView>

@@ -296,6 +296,10 @@ export const ko = {
     about: '정보',
     gatewayVersion: '게이트웨이 버전',
     appVersion: '앱 버전',
+    checkingUpdate: '새 버전을 확인하는 중',
+    latestVersion: '최신 버전이에요',
+    getUpdate: (v: string) => `새 버전 ${v} 받기`,
+    updateFailed: '새 버전을 확인하지 못했어요. 다시 확인',
   },
   acorn: {
     story:
